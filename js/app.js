@@ -1,6 +1,6 @@
 (function (root) {
   var E = root.ImpulsaEngine;
-  var PAGE = 10;
+  var PAGE = 6;
   var session = null;
   var db = null;
   var ui = { page: 1, q: "", report: "cobranzas" };
@@ -18,7 +18,6 @@
     { href: "#/caja", label: "Caja y capital", group: "Capital", icon: "safe" },
     { href: "#/inversionistas", label: "Inversionistas", group: "Capital", icon: "trend" },
     { href: "#/reportes", label: "Reportes", group: "Análisis", icon: "chart" },
-    { href: "#/configuracion", label: "Configuración", group: "Análisis", icon: "gear" },
   ];
 
   function $(id) {
@@ -100,32 +99,65 @@
     return '<p class="empty">' + esc(text || "No hay registros.") + "</p>";
   }
   function pager(total, page) {
-    var pages = Math.max(1, Math.ceil(total / PAGE));
+    var pages = Math.max(1, Math.ceil((total || 0) / PAGE));
     if (page > pages) page = pages;
-    if (total <= PAGE) return "";
+    if (page < 1) page = 1;
+    if (!total) return "";
     var from = (page - 1) * PAGE + 1;
     var to = Math.min(page * PAGE, total);
+    var start = Math.max(1, page - 2);
+    var end = Math.min(pages, start + 4);
+    start = Math.max(1, end - 4);
+    var nums = "";
+    var i;
+    for (i = start; i <= end; i += 1) {
+      nums +=
+        '<button type="button" class="page-btn' +
+        (i === page ? " is-on" : "") +
+        '" data-act="page" data-page="' +
+        i +
+        '">' +
+        i +
+        "</button>";
+    }
     return (
-      '<div class="team-pager if-pager"><button type="button" class="page-btn" data-act="page" data-page="' +
-      (page - 1) +
-      '" ' +
-      (page <= 1 ? "disabled" : "") +
-      ">Anterior</button><span>Mostrando " +
+      '<div class="if-pager"><span class="if-pager-meta">' +
       from +
       "–" +
       to +
       " de " +
       total +
-      '</span><button type="button" class="page-btn" data-act="page" data-page="' +
+      '</span><div class="if-pager-nav"><button type="button" class="page-btn" data-act="page" data-page="' +
+      (page - 1) +
+      '"' +
+      (page <= 1 ? " disabled" : "") +
+      ">Anterior</button>" +
+      nums +
+      '<button type="button" class="page-btn" data-act="page" data-page="' +
       (page + 1) +
-      '" ' +
-      (page >= pages ? "disabled" : "") +
-      ">Siguiente</button></div>"
+      '"' +
+      (page >= pages ? " disabled" : "") +
+      ">Siguiente</button></div></div>"
     );
   }
   function slice(list) {
+    var pages = Math.max(1, Math.ceil((list.length || 0) / PAGE));
+    if (ui.page > pages) ui.page = pages;
+    if (ui.page < 1) ui.page = 1;
     var start = (ui.page - 1) * PAGE;
     return list.slice(start, start + PAGE);
+  }
+  function byName(list) {
+    return (list || []).slice().sort(function (a, b) {
+      var aa = String((a && a.apellidos) || "") + " " + String((a && a.nombres) || "");
+      var bb = String((b && b.apellidos) || "") + " " + String((b && b.nombres) || "");
+      return aa.localeCompare(bb, "es", { sensitivity: "base" });
+    });
+  }
+  function byDate(list, key) {
+    return (list || []).slice().sort(function (a, b) {
+      return String((b && b[key]) || "").localeCompare(String((a && a[key]) || ""));
+    });
   }
   function navHtml(current) {
     var html = "";
@@ -239,6 +271,35 @@
     toast(title);
     return Promise.resolve();
   }
+  function welcomeAfterLogin() {
+    var s = db && E ? E.kpis(db) : {};
+    var html =
+      '<p class="if-welcome-lead">Ingresó como Administrador. Resumen de la cartera:</p>' +
+      '<div class="if-welcome-grid">' +
+      '<div><span>Caja</span><b>' +
+      esc(sol(s.capitalDisponible || 0)) +
+      "</b></div><div><span>En la calle</span><b>" +
+      esc(sol(s.capitalPrestado || 0)) +
+      "</b></div><div><span>Clientes</span><b>" +
+      esc(String(s.clientes || 0)) +
+      "</b></div><div><span>Inversionistas</span><b>" +
+      esc(String(s.inversionistasActivos || 0)) +
+      "</b></div></div>";
+    if (swalOn()) {
+      return root.Swal.fire(
+        swalBase({
+          icon: "success",
+          title: "Bienvenido",
+          html: html,
+          confirmButtonText: "Entendido",
+          backdrop: "rgba(9, 38, 83, 0.32)",
+          width: 520,
+        })
+      );
+    }
+    toast("Bienvenido");
+    return Promise.resolve();
+  }
   function swalErr(msg) {
     if (swalOn()) {
       return root.Swal.fire(swalBase({ icon: "error", title: "No se pudo completar", text: msg || "", confirmButtonText: "Revisar" }));
@@ -259,6 +320,24 @@
     $("form-body").innerHTML = html;
     $("form-modal").classList.add("open");
     document.body.style.overflow = "hidden";
+      root.setTimeout(function () {
+      var first = document.querySelector("#form-body input:not([readonly]):not([type=hidden]), #form-body select, #form-body textarea");
+      if (first) first.focus();
+      }, 40);
+    }
+  function modalActions(okLabel) {
+    return (
+      '<div class="form-actions"><button type="button" class="tool-btn tool-btn-ghost" data-act="modal-close">Cancelar</button><button type="submit" class="tool-btn tool-btn-dark">' +
+      esc(okLabel) +
+      "</button></div>"
+    );
+  }
+  function modalCloseBar(extra) {
+      return (
+      '<div class="form-actions">' +
+      (extra || "") +
+      '<button type="button" class="tool-btn tool-btn-dark" data-act="modal-close">Cerrar</button></div>'
+    );
   }
   function closeModal() {
     $("form-modal").classList.remove("open");
@@ -412,7 +491,7 @@
     items.forEach(function (it) {
       max = Math.max(max, Number(it.ingresos || 0), Number(it.egresos || 0));
     });
-    return (
+            return (
       '<div class="if-bars is-dual">' +
       items
         .map(function (it) {
@@ -434,7 +513,7 @@
     var total = items.reduce(function (a, it) {
       return a + Number(it.valor || 0);
     }, 0) || 1;
-    var colors = ["#123D78", "#D4A52C", "#16A36A", "#092653"];
+    var colors = ["#092653", "#123D78", "#D4A52C", "#F0D47A", "#16A36A", "#DC3545"];
     var r = 42;
     var c = 2 * Math.PI * r;
     var off = 0;
@@ -505,17 +584,41 @@
   }
 
   function reload() {
-    return root.ImpulsaApi.loadLocal().then(function (pack) {
+    return root.ImpulsaApi.sync(session).then(function (pack) {
       db = pack;
+      paintApiBar(null);
       return db;
+    }).catch(function (err) {
+      paintApiBar(err);
+      return root.ImpulsaApi.loadLocal().then(function (pack) {
+        db = pack;
+        throw err;
+      });
     });
+  }
+  function paintApiBar(err) {
+    var bar = $("api-bar");
+    if (!bar) return;
+    if (!root.ImpulsaApi.usesRemote()) {
+      bar.hidden = true;
+      return;
+    }
+    if (!err) {
+      bar.hidden = true;
+      return;
+    }
+    bar.hidden = false;
+    var text = $("api-bar-text");
+    if (text) text.textContent = (err && err.message) || "No se pudo sincronizar con Code.gs.";
   }
   function run(action, payload) {
     return root.ImpulsaApi.call(action, payload, session).then(function (res) {
+      if ((action === "login" || action === "setupAdmin") && res && res.data && res.data.id) {
+        session = res.data;
+      }
       if (res && res.db) db = res.db;
-      else return reload().then(function () {
-        return res;
-      });
+      else if (root.ImpulsaApi.cacheDb()) db = root.ImpulsaApi.cacheDb();
+      paintApiBar(null);
       return res;
     });
   }
@@ -529,85 +632,505 @@
       return E.cuotaSaldo(c) > 0.009 && String(c.fechaVencimiento || "") < todayKey;
     });
   }
+  function addDayKey(key, n) {
+    var iso = E.limaDate ? E.limaDate(key) : String(key || "").slice(0, 10);
+    var p = String(iso || "").split("-");
+    if (p.length !== 3) return key;
+    var dt = new Date(Number(p[0]), Number(p[1]) - 1, Number(p[2]) + Number(n || 0));
+    var m = String(dt.getMonth() + 1);
+    var d = String(dt.getDate());
+    if (m.length < 2) m = "0" + m;
+    if (d.length < 2) d = "0" + d;
+    return dt.getFullYear() + "-" + m + "-" + d;
+  }
+  function cobrosCerca() {
+    var hoy = today();
+    var hasta = addDayKey(hoy, 3);
+    return (db.cuotas || [])
+      .filter(function (c) {
+        if (!c || E.cuotaSaldo(c) <= 0.009) return false;
+        var f = String(c.fechaVencimiento || "").slice(0, 10);
+        return f && f <= hasta;
+      })
+      .sort(function (a, b) {
+        return String(a.fechaVencimiento || "").localeCompare(String(b.fechaVencimiento || ""));
+      });
+  }
+  function etiquetaCobro(c) {
+    var hoy = today();
+    var f = String(c.fechaVencimiento || "").slice(0, 10);
+    if (f < hoy) return "Vencida";
+    if (f === hoy) return "Hoy";
+    if (f === addDayKey(hoy, 1)) return "Mañana";
+    return "El " + fmtDate(f);
+  }
+  function notifyPerm() {
+    return root.Notification && root.Notification.permission;
+  }
+  function enableDesktopNotices() {
+    if (!root.Notification) return Promise.resolve(false);
+    if (Notification.permission === "granted") return Promise.resolve(true);
+    if (Notification.permission === "denied") return Promise.resolve(false);
+    return Notification.requestPermission().then(function (p) {
+      return p === "granted";
+    });
+  }
+  function showDesktopNotice(title, body, tag) {
+    if (!root.Notification || Notification.permission !== "granted") return;
+    var opts = {
+      body: body,
+      tag: tag || "impulsa-cobro",
+      icon: "JL.jpeg",
+      badge: "JL.jpeg",
+      lang: "es-PE",
+      requireInteraction: true,
+    };
+    if (root.navigator && root.navigator.serviceWorker) {
+      root.navigator.serviceWorker.ready
+        .then(function (reg) {
+          if (reg && reg.showNotification) return reg.showNotification(title, opts);
+          throw new Error("no-sw");
+        })
+        .catch(function () {
+          try {
+            new Notification(title, opts);
+          } catch (err) {}
+        });
+    } else {
+      try {
+        new Notification(title, opts);
+    } catch (err) {}
+    }
+  }
+  function alertDesktopCobros() {
+    if (notifyPerm() !== "granted") return;
+    var hoy = today();
+    var list = cobrosCerca();
+    if (!list.length) return;
+    var stamp = list
+      .map(function (c) {
+        return c.id + ":" + String(c.fechaVencimiento || "").slice(0, 10);
+      })
+      .sort()
+      .join("|");
+    var key = "impulsa.avisoCobros." + hoy;
+    try {
+      if (root.localStorage && root.localStorage.getItem(key) === stamp) return;
+      root.localStorage.setItem(key, stamp);
+    } catch (err) {}
+    var vencidas = list.filter(function (c) {
+      return String(c.fechaVencimiento || "") < hoy;
+    });
+    var proximas = list.filter(function (c) {
+      return String(c.fechaVencimiento || "") >= hoy;
+    });
+    function linea(c) {
+      var p = E.find(db.prestamos, c.prestamoId) || {};
+      return etiquetaCobro(c) + ": " + person(clienteOf(p.clienteId)) + " · " + sol(E.cuotaSaldo(c));
+    }
+    if (proximas.length) {
+      showDesktopNotice(
+        proximas.length === 1 ? "Cobro que se acerca" : proximas.length + " cobros que se acercan",
+        proximas.slice(0, 4).map(linea).join("\n"),
+        "impulsa-prox-" + hoy
+      );
+    }
+    if (vencidas.length) {
+      showDesktopNotice(
+        vencidas.length === 1 ? "Cobro vencido" : vencidas.length + " cobros vencidos",
+        vencidas.slice(0, 4).map(linea).join("\n"),
+        "impulsa-venc-" + hoy
+      );
+    }
+  }
 
+  function fmtDate(s) {
+    var str = String(s || "").trim();
+    if (!str) return "—";
+    var iso = str.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (iso) return iso[3] + "-" + iso[2];
+    var pe = str.match(/^(\d{2})-(\d{2})-(\d{4})/);
+    if (pe) return pe[1] + "-" + pe[2];
+    return str;
+  }
+  function fmtWhen(fecha, hora) {
+    var str = String(fecha || "").trim();
+    var pe = str.match(/^(\d{2})-(\d{2})-(\d{4})(?:[ T](\d{2}):(\d{2}))?/);
+    if (pe) return pe[1] + "-" + pe[2] + (pe[4] ? " " + pe[4] + ":" + pe[5] : hora ? " " + String(hora).slice(0, 5) : "");
+    var d = fmtDate(fecha);
+    var h = String(hora || "").slice(0, 5);
+    if (!h) {
+      var t = str.match(/T(\d{2}):(\d{2})/);
+      if (t) h = t[1] + ":" + t[2];
+    }
+    return h ? d + " " + h : d;
+  }
+  function triLetras(n) {
+    var u = ["", "uno", "dos", "tres", "cuatro", "cinco", "seis", "siete", "ocho", "nueve"];
+    var d10 = ["diez", "once", "doce", "trece", "catorce", "quince", "dieciseis", "diecisiete", "dieciocho", "diecinueve"];
+    var d = ["", "", "veinte", "treinta", "cuarenta", "cincuenta", "sesenta", "setenta", "ochenta", "noventa"];
+    var c = ["", "ciento", "doscientos", "trescientos", "cuatrocientos", "quinientos", "seiscientos", "setecientos", "ochocientos", "novecientos"];
+    n = Math.floor(Math.abs(n));
+    if (n === 0) return "";
+    if (n === 100) return "cien";
+    var parts = [];
+    var cen = Math.floor(n / 100);
+    var dos = n % 100;
+    if (cen) parts.push(c[cen]);
+    if (dos === 0) return parts.join(" ");
+    if (dos < 10) parts.push(u[dos]);
+    else if (dos < 20) parts.push(d10[dos - 10]);
+    else if (dos < 30) parts.push(dos === 20 ? "veinte" : "veinti" + u[dos - 20]);
+    else parts.push(d[Math.floor(dos / 10)] + (dos % 10 ? " y " + u[dos % 10] : ""));
+    return parts.join(" ");
+  }
+  function enteroEnLetras(n) {
+    n = Math.floor(Math.abs(Number(n) || 0));
+    if (n === 0) return "cero";
+    var mill = Math.floor(n / 1e6);
+    var mil = Math.floor((n % 1e6) / 1000);
+    var res = n % 1000;
+    var parts = [];
+    if (mill) parts.push(mill === 1 ? "un millon" : triLetras(mill) + " millones");
+    if (mil) parts.push(mil === 1 ? "mil" : triLetras(mil).replace(/^uno$/, "un") + " mil");
+    if (res) parts.push(triLetras(res));
+    return parts.join(" ").replace(/\s+/g, " ").trim();
+  }
+  function numeroEnLetras(monto) {
+    var n = Math.abs(Number(monto) || 0);
+    var entero = Math.floor(n + 1e-9);
+    var cents = Math.round((n - entero) * 100);
+    if (cents === 100) {
+      entero += 1;
+      cents = 0;
+    }
+    var words = entero === 1 ? "un" : enteroEnLetras(entero);
+    var moneda = entero === 1 ? "sol" : "soles";
+    var cc = (cents < 10 ? "0" : "") + cents;
+    return (words + " con " + cc + "/100 " + moneda).toUpperCase();
+  }
+  function initials(row) {
+    var n = person(row);
+    var parts = n.split(/\s+/).filter(Boolean);
+    var a = ((parts[0] && parts[0].charAt(0)) || "") + ((parts[1] && parts[1].charAt(0)) || "");
+    return (a || "IF").toUpperCase();
+  }
+  function dashWho(row) {
+    var colors = ["#092653", "#123D78", "#D4A52C", "#16A36A"];
+    var n = person(row);
+    var i = (n.charCodeAt(0) || 0) % colors.length;
+    return (
+      '<div class="dash-who"><span class="dash-ava" style="background:' +
+      colors[i] +
+      '">' +
+      esc(initials(row)) +
+      "</span><span>" +
+      esc(n) +
+      "</span></div>"
+    );
+  }
+  function cajaHasta(fecha) {
+    return (db.movimientosCaja || []).reduce(function (a, m) {
+      if (!m || m.anulado || !m.fecha || m.fecha > fecha) return a;
+      if (m.sentido === "ingreso") return money(a + Number(m.monto || 0));
+      if (m.sentido === "egreso") return money(a - Number(m.monto || 0));
+      return a;
+    }, 0);
+  }
+  function keyOfDate(d) {
+    var m = String(d.getMonth() + 1);
+    var day = String(d.getDate());
+    if (m.length < 2) m = "0" + m;
+    if (day.length < 2) day = "0" + day;
+    return d.getFullYear() + "-" + m + "-" + day;
+  }
+  function isoMonday(key) {
+    var p = String(key || "").slice(0, 10).split("-").map(Number);
+    var d = new Date(p[0], p[1] - 1, p[2]);
+    var day = d.getDay() || 7;
+    d.setDate(d.getDate() - (day - 1));
+    return keyOfDate(d);
+  }
+  function isoWeekOf(key) {
+    var p = String(key || "").slice(0, 10).split("-").map(Number);
+    var d = new Date(Date.UTC(p[0], p[1] - 1, p[2]));
+    var day = d.getUTCDay() || 7;
+    d.setUTCDate(d.getUTCDate() + 4 - day);
+    var year = d.getUTCFullYear();
+    var jan1 = new Date(Date.UTC(year, 0, 1));
+    var week = Math.ceil(((d - jan1) / 86400000 + 1) / 7);
+    var meses = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
+    return { year: year, week: week, month: meses[d.getUTCMonth()] };
+  }
+  function weekBuckets() {
+    var monday = isoMonday(today());
+    var out = [];
+    var i;
+    for (i = 7; i >= 0; i -= 1) {
+      var from = E.addPeriod(monday, "diaria", -(i * 7));
+      var to = E.addPeriod(from, "diaria", 6);
+      var iso = isoWeekOf(from);
+      var n = iso.week < 10 ? "0" + iso.week : String(iso.week);
+      out.push({
+        from: from,
+        to: to,
+        label: "S" + n + "\n" + iso.month + " " + iso.year,
+      });
+    }
+    return out;
+  }
+  function inRange(fecha, from, to) {
+    return !!fecha && fecha >= from && fecha <= to;
+  }
+  function dashWeekSeries() {
+    return weekBuckets().map(function (w) {
+      var cob = (db.cobranzas || []).reduce(function (a, c) {
+        return !c || c.anulado || !inRange(c.fecha, w.from, w.to) ? a : money(a + Number(c.importe || 0));
+      }, 0);
+      var prest = (db.prestamos || []).reduce(function (a, p) {
+        return !p || !inRange(p.fechaDesembolso, w.from, w.to) ? a : money(a + Number(p.capital || 0));
+      }, 0);
+      return { label: w.label, cobranzas: cob, prestamos: prest, caja: Math.max(0, cajaHasta(w.to)) };
+    });
+  }
+  function groupedBars(items) {
+    var max = 1;
+    items.forEach(function (it) {
+      max = Math.max(max, Number(it.cobranzas || 0), Number(it.prestamos || 0), Number(it.caja || 0));
+    });
+    function h(v) {
+      v = Number(v || 0);
+      if (v <= 0) return 0;
+      return Math.max(6, Math.round((v / max) * 100));
+    }
+        return (
+      '<div class="dash-bars">' +
+      items
+        .map(function (it) {
+          return (
+            '<div class="dash-bar-g" title="' +
+            esc(String(it.label || "").replace("\n", " ") + " · Cobranzas " + sol(it.cobranzas) + " · Préstamos " + sol(it.prestamos) + " · Caja " + sol(it.caja)) +
+            '"><span class="is-cob" style="height:' +
+            h(it.cobranzas) +
+            '%"></span><span class="is-pre" style="height:' +
+            h(it.prestamos) +
+            '%"></span><span class="is-caj" style="height:' +
+            h(it.caja) +
+            '%"></span><small>' +
+            esc(it.label) +
+            "</small></div>"
+          );
+        })
+        .join("") +
+      "</div>"
+    );
+  }
+  function statusDonut(activos, pagados, atrasados) {
+    var total = activos + pagados + atrasados;
+    var items = [
+      { label: "Activos", valor: activos, color: "#16A36A" },
+      { label: "Pagados", valor: pagados, color: "#123D78" },
+      { label: "Atrasados", valor: atrasados, color: "#DC3545" },
+    ];
+    var sum = total || 1;
+    var r = 38;
+    var c = 2 * Math.PI * r;
+    var off = 0;
+    var rings = items
+      .map(function (it) {
+        var len = (Number(it.valor || 0) / sum) * c;
+        var html =
+          '<circle cx="50" cy="50" r="' +
+          r +
+          '" fill="none" stroke="' +
+          it.color +
+          '" stroke-width="14" stroke-linecap="round" stroke-dasharray="' +
+          len +
+          " " +
+          (c - len) +
+          '" stroke-dashoffset="' +
+          -off +
+          '" transform="rotate(-90 50 50)"></circle>';
+        off += len;
+        return html;
+      })
+      .join("");
+    return (
+      '<div class="dash-donut"><div class="dash-donut-wrap"><svg viewBox="0 0 100 100">' +
+      '<circle cx="50" cy="50" r="' +
+      r +
+      '" fill="none" stroke="#F5F7FA" stroke-width="14"></circle>' +
+      rings +
+      '</svg><div class="dash-donut-center"><b>' +
+      total +
+      "</b><small>préstamos</small></div></div><ul>" +
+      items
+        .map(function (it) {
+          var pct = total ? Math.round((it.valor / total) * 100) : 0;
+          return (
+            "<li><i style='background:" +
+            it.color +
+            "'></i><span>" +
+            esc(it.label) +
+            "</span><b>" +
+            it.valor +
+            "</b><em>" +
+            pct +
+            "%</em></li>"
+          );
+        })
+        .join("") +
+      "</ul></div>"
+    );
+  }
   function renderDashboard() {
     var s = E.kpis(db);
-    var ser = E.series(db);
-    var venc = overdue().slice(0, 8);
+    var weeks = dashWeekSeries();
+    var hoy = today();
+    var prestamos = db.prestamos || [];
+    var pagados = prestamos.filter(function (p) {
+      return p.estado === "cancelado";
+    }).length;
+    var atrasados = prestamos.filter(function (p) {
+      return p.estado === "vencido" || (p.estado === "activo" && (db.cuotas || []).some(function (c) {
+        return c.prestamoId === p.id && E.cuotaSaldo(c) > 0.009 && String(c.fechaVencimiento || "") < hoy;
+      }));
+    }).length;
+    var activosN = prestamos.filter(function (p) {
+      return p.estado === "activo";
+    }).length;
+    function ym(key) {
+      return String(key || "").slice(0, 7);
+    }
+    function nextYm(key) {
+      var p = String(key || "").slice(0, 7).split("-").map(Number);
+      var y = p[0];
+      var m = p[1] + 1;
+      if (m > 12) {
+        m = 1;
+        y += 1;
+      }
+      return y + "-" + (m < 10 ? "0" : "") + m;
+    }
+    function byVence(a, b) {
+      return String(a.fechaVencimiento || "").localeCompare(String(b.fechaVencimiento || ""));
+    }
+    var mes = ym(hoy);
+    var mesSig = nextYm(hoy);
+    var pendientes = (db.cuotas || []).filter(function (c) {
+      return E.cuotaSaldo(c) > 0.009;
+    });
+    var esteMes = pendientes.filter(function (c) {
+      return ym(c.fechaVencimiento) === mes;
+    }).sort(byVence);
+    var otroMes = pendientes.filter(function (c) {
+      return ym(c.fechaVencimiento) === mesSig;
+    }).sort(byVence);
+    var prox = esteMes.concat(otroMes).slice(0, 5);
+    var ult = prestamos
+      .slice()
+      .sort(function (a, b) {
+        return String(b.fechaDesembolso || "").localeCompare(String(a.fechaDesembolso || ""));
+      })
+      .slice(0, 5);
+    var freq = { diaria: "días", semanal: "sem", quincenal: "quin", mensual: "mes" };
     return (
-      '<div class="layout if-dash"><div class="col">' +
-      '<section class="hero if-hero"><div><p>' +
-      esc(new Date().toLocaleDateString("es-PE", { weekday: "long", day: "numeric", month: "long" })) +
-      "</p><h1>Control de capital y cobranzas</h1><p>Indicadores reales de cartera, caja e inversionistas. Nada se inventa: todo sale de los registros.</p><div class=\"hero-actions\"><a class=\"btn btn-light\" href=\"#/prestamos\">Nuevo préstamo</a><a class=\"btn btn-ghost\" href=\"#/cobranzas\">Registrar cobranza</a></div></div><img class=\"hero-chef hero-logo\" src=\"JL.jpeg\" alt=\"Impulsa Financiera\" width=\"220\" height=\"140\" decoding=\"async\"></section>" +
-      '<div class="kpis kpis-wide">' +
-      kpiCard("Capital disponible", sol(s.capitalDisponible), "Saldo de caja", "gold") +
-      kpiCard("Capital prestado", sol(s.capitalPrestado), "Dinero en la calle", "navy") +
-      kpiCard("Préstamos activos", String(s.prestamosActivos), "Incluye vencidos", "navy") +
-      kpiCard("Clientes", String(s.clientes), "Registros activos", "navy") +
-      kpiCard("Cobranzas del día", sol(s.cobranzasDia), s.cobranzasDiaN + " operaciones", "ok") +
-      kpiCard("Cobranzas de la semana", sol(s.cobranzasSemana), "Últimos 7 días", "ok") +
-      kpiCard("Cuotas vencidas", String(s.cuotasVencidas), sol(s.cuotasVencidasMonto), "bad") +
-      kpiCard("Ganancias cobradas", sol(s.gananciasGeneradas), "Solo intereses percibidos", "ok") +
-      kpiCard("Ganancias por liquidar", sol(s.gananciasPendientes), "No son rentabilidad garantizada", "gold") +
-      kpiCard("Inversionistas activos", String(s.inversionistasActivos), "Capital " + sol(s.capitalInversionistas), "navy") +
-      "</div></div>" +
-      '<aside class="rail"><section class="summary if-summary"><h2>Composición</h2>' +
-      '<div class="if-kv"><span>Capital propio</span><b>' +
-      esc(sol(s.capitalPropio)) +
-      "</b></div><div class=\"if-kv\"><span>Capital de inversionistas</span><b>" +
-      esc(sol(s.capitalInversionistas)) +
-      "</b></div><div class=\"if-kv\"><span>Utilidad neta</span><b>" +
-      esc(sol(s.utilidadesNetas)) +
-      "</b></div><div class=\"if-kv\"><span>Caja actual</span><b>" +
-      esc(sol(s.caja)) +
-      "</b></div><p class=\"muted if-note\">Una cobranza no es ganancia completa: solo el interés cobrado entra a resultados.</p>" +
-      '<a class="btn-block" href="#/caja">Ver caja</a></section></aside>' +
-      '<div class="full if-charts">' +
-      '<article class="card chart-card"><h3>Evolución de cobranzas</h3>' +
-      bars(ser.cobranzas) +
-      "</article>" +
-      '<article class="card chart-card"><h3>Préstamos otorgados</h3>' +
-      bars(ser.prestamos) +
-      "</article>" +
-      '<article class="card chart-card"><h3>Distribución del capital</h3>' +
-      donut(ser.capital) +
-      "</article>" +
-      '<article class="card chart-card"><h3>Ingresos y egresos</h3><p class="muted chart-legend">Azul ingresos · Dorado egresos</p>' +
-      dualBars(ser.flujo) +
-      "</article></div>" +
-      '<div class="full"><section class="card verify"><div class="verify-head"><div><h2>Cuotas vencidas</h2><p class="if-count">' +
-      venc.length +
-      " en alerta</p></div><a class=\"tool-btn\" href=\"#/cobranzas\">Ir a cobranzas</a></div>" +
-      (venc.length
+      '<div class="dash">' +
+      '<header class="dash-head"><div><h1>Dashboard</h1><p>Resumen general de tu fondo de préstamos</p></div>' +
+      '<div class="dash-actions"><button type="button" class="dash-btn dash-btn-navy" data-act="prestamo-new">+ Nuevo Préstamo</button>' +
+      '<button type="button" class="dash-btn dash-btn-ok" data-act="cliente-new">+ Nuevo Cliente</button></div></header>' +
+      '<div class="dash-kpis">' +
+      '<article class="dash-kpi is-caja">' +
+      "<span>Capital disponible<br>en caja</span><b>" +
+      esc(sol(s.capitalDisponible)) +
+      "</b><small>Saldo real de caja</small></article>" +
+      '<article class="dash-kpi is-calle">' +
+      "<span>Dinero en la calle<br>(colocado)</span><b>" +
+      esc(sol(s.capitalPrestado)) +
+      "</b><small>" +
+      s.prestamosActivos +
+      " préstamos activos</small></article>" +
+      '<article class="dash-kpi is-cob">' +
+      "<span>Cobranzas<br>esta semana</span><b>" +
+      esc(sol(s.cobranzasSemana)) +
+      "</b><small>Últimos 7 días</small></article>" +
+      '<article class="dash-kpi is-cli">' +
+      "<span>Clientes<br>activos</span><b>" +
+      s.clientes +
+      "</b><small>Total de clientes registrados</small></article></div>" +
+      '<div class="dash-mid">' +
+      '<section class="card dash-card"><div class="dash-card-h"><h2>Movimiento de caja</h2><small>Semana, mes y año</small></div>' +
+      '<p class="dash-legend"><span><i class="is-cob"></i>Cobranzas</span><span><i class="is-pre"></i>Nuevos préstamos</span><span><i class="is-caj"></i>Capital disponible</span></p>' +
+      groupedBars(weeks) +
+      "</section>" +
+      '<section class="card dash-card"><div class="dash-card-h"><h2>Estado de préstamos</h2></div>' +
+      statusDonut(activosN, pagados, atrasados) +
+      "</section></div>" +
+      '<div class="dash-low">' +
+      '<section class="card dash-card"><div class="dash-card-h"><h2>Próximas cobranzas</h2><small>Este mes y el siguiente</small></div>' +
+      (prox.length
         ? table(
             [
-              { key: "cli", label: "Cliente" },
-              { key: "pre", label: "Préstamo" },
-              { key: "nro", label: "Cuota" },
-              { key: "fecha", label: "Vencimiento" },
-              { key: "saldo", label: "Saldo" },
+              { key: "fecha", label: "Fecha" },
+              { key: "cli", label: "Cliente", html: true },
+              { key: "cuota", label: "Cuota" },
+              { key: "estado", label: "Estado", html: true },
+              { key: "act", label: "Acciones", html: true },
             ],
-            venc.map(function (c) {
+            prox.map(function (c) {
               var p = E.find(db.prestamos, c.prestamoId) || {};
+              var late = String(c.fechaVencimiento || "") < hoy;
               return {
-                cli: person(clienteOf(p.clienteId)),
-                pre: p.codigo || "—",
-                nro: c.nro,
-                fecha: c.fechaVencimiento,
-                saldo: sol(E.cuotaSaldo(c)),
+                fecha: fmtDate(c.fechaVencimiento),
+                cli: dashWho(clienteOf(p.clienteId)),
+                cuota: sol(E.cuotaSaldo(c)),
+                estado: '<span class="if-badge is-' + (late ? "bad" : "gold") + '">' + (late ? "Vencida" : "Por cobrar") + "</span>",
+                act:
+                  '<button type="button" class="dash-link" data-act="pago-new" data-id="' +
+                  esc(p.id || "") +
+                  '">Cobrar</button>',
               };
             })
           )
-        : empty("No hay cuotas vencidas.")) +
+        : empty("No hay cobranzas de este mes ni del siguiente.")) +
+      "</section>" +
+      '<section class="card dash-card"><div class="dash-card-h"><h2>Últimos préstamos</h2><a href="#/prestamos">Ver todos</a></div>' +
+      (ult.length
+        ? table(
+            [
+              { key: "fecha", label: "Fecha" },
+              { key: "cli", label: "Cliente", html: true },
+              { key: "monto", label: "Monto" },
+              { key: "plazo", label: "Plazo" },
+              { key: "estado", label: "Estado", html: true },
+            ],
+            ult.map(function (p) {
+              return {
+                fecha: fmtDate(p.fechaDesembolso),
+                cli: dashWho(clienteOf(p.clienteId)),
+                monto: sol(p.capital),
+                plazo: (p.nCuotas || 0) + " " + (freq[p.frecuencia] || p.frecuencia || ""),
+                estado:
+                  p.estado === "cancelado"
+                    ? '<span class="if-badge is-navy">Pagado</span>'
+                    : p.estado === "vencido"
+                    ? '<span class="if-badge is-bad">Atrasado</span>'
+                    : badge(p.estado),
+              };
+            })
+          )
+        : empty("Aún no hay préstamos.")) +
       "</section></div></div>"
     );
   }
 
   function renderClientes(q) {
-    var list = (db.clientes || []).filter(function (c) {
-      var blob = [c.dni, c.nombres, c.apellidos, c.celular].join(" ").toLowerCase();
-      return !q || blob.indexOf(q) !== -1;
-    });
+    var list = byName(
+      (db.clientes || []).filter(function (c) {
+        var blob = [c.dni, c.nombres, c.apellidos, c.celular, c.ref1Telefono, c.correo].join(" ").toLowerCase();
+        return !q || blob.indexOf(q) !== -1;
+      })
+    );
     var rows = slice(list).map(function (c) {
       var n = db.prestamos.filter(function (p) {
         return p.clienteId === c.id;
@@ -619,15 +1142,22 @@
           "</strong><small>DNI " +
           esc(c.dni) +
           "</small></div>",
-        celular: c.celular || "—",
+        tel1: c.celular || "—",
+        tel2: c.ref1Telefono || "—",
+        correo: c.correo || "—",
         prestamos: n,
-        estado: badge(c.estado),
         act:
           '<div class="if-acts"><button type="button" class="tool-btn" data-act="cliente-edit" data-id="' +
           esc(c.id) +
           '">Editar</button><button type="button" class="tool-btn" data-act="cliente-hist" data-id="' +
           esc(c.id) +
-          '">Historial</button></div>',
+          '">Historial</button>' +
+          (E.clienteSePuedeQuitar(db, c.id)
+            ? '<button type="button" class="tool-btn tool-btn-bad" data-act="cliente-quitar" data-id="' +
+              esc(c.id) +
+              '">Quitar</button>'
+            : "") +
+          "</div>",
       };
     });
     return (
@@ -636,9 +1166,10 @@
       table(
         [
           { key: "who", label: "Cliente", html: true },
-          { key: "celular", label: "Celular" },
+          { key: "tel1", label: "Teléfono 1" },
+          { key: "tel2", label: "Teléfono 2" },
+          { key: "correo", label: "Correo" },
           { key: "prestamos", label: "Préstamos" },
-          { key: "estado", label: "Estado", html: true },
           { key: "act", label: "", html: true },
         ],
         rows
@@ -648,11 +1179,13 @@
     );
   }
   function renderAvales(q) {
-    var list = (db.avales || []).filter(function (a) {
-      return matchQ(a, q) || person(clienteOf(a.clienteId)).toLowerCase().indexOf(q) !== -1;
-    });
+    var list = byName(
+      (db.avales || []).filter(function (a) {
+        return matchQ(a, q) || person(clienteOf(a.clienteId)).toLowerCase().indexOf(q) !== -1;
+      })
+    );
     var rows = slice(list).map(function (a) {
-      return {
+    return {
         who:
           '<div class="person-name"><strong>' +
           esc(person(a)) +
@@ -660,10 +1193,17 @@
           esc(a.dni) +
           "</small></div>",
         cli: person(clienteOf(a.clienteId)),
-        parentesco: a.parentesco || "—",
         celular: a.celular || "—",
-        estado: badge(a.estado),
-        act: '<button type="button" class="tool-btn" data-act="aval-edit" data-id="' + esc(a.id) + '">Editar</button>',
+        act:
+          '<div class="if-acts"><button type="button" class="tool-btn" data-act="aval-edit" data-id="' +
+          esc(a.id) +
+          '">Editar</button>' +
+          (E.avalSePuedeQuitar(db, a.id)
+            ? '<button type="button" class="tool-btn tool-btn-bad" data-act="aval-quitar" data-id="' +
+              esc(a.id) +
+              '">Quitar</button>'
+            : "") +
+          "</div>",
       };
     });
     return (
@@ -673,9 +1213,7 @@
         [
           { key: "who", label: "Aval", html: true },
           { key: "cli", label: "Cliente" },
-          { key: "parentesco", label: "Parentesco" },
           { key: "celular", label: "Celular" },
-          { key: "estado", label: "Estado", html: true },
           { key: "act", label: "", html: true },
         ],
         rows
@@ -685,11 +1223,14 @@
     );
   }
   function renderPrestamos(q) {
-    var list = (db.prestamos || []).filter(function (p) {
-      var cli = clienteOf(p.clienteId);
-      var blob = [p.codigo, person(cli), cli.dni].join(" ").toLowerCase();
-      return !q || blob.indexOf(q) !== -1;
-    });
+    var list = byDate(
+      (db.prestamos || []).filter(function (p) {
+        var cli = clienteOf(p.clienteId);
+        var blob = [p.codigo, person(cli), cli.dni].join(" ").toLowerCase();
+        return !q || blob.indexOf(q) !== -1;
+      }),
+      "fechaDesembolso"
+    );
     var rows = slice(list).map(function (p) {
       return {
         codigo: p.codigo,
@@ -726,18 +1267,21 @@
     );
   }
   function renderCobranzas(q) {
-    var list = (db.cobranzas || []).filter(function (c) {
-      if (c.anulado) return q === "anulado";
-      var cli = clienteOf(c.clienteId);
-      var p = E.find(db.prestamos, c.prestamoId) || {};
-      var blob = [c.codigo, person(cli), p.codigo, c.fecha].join(" ").toLowerCase();
-      return !q || blob.indexOf(q) !== -1;
-    });
+    var list = byDate(
+      (db.cobranzas || []).filter(function (c) {
+        if (c.anulado) return q === "anulado";
+        var cli = clienteOf(c.clienteId);
+        var p = E.find(db.prestamos, c.prestamoId) || {};
+        var blob = [c.codigo, person(cli), p.codigo, c.fecha].join(" ").toLowerCase();
+        return !q || blob.indexOf(q) !== -1;
+      }),
+      "fecha"
+    );
     var rows = slice(list).map(function (c) {
       return {
         codigo: c.codigo,
         cli: person(clienteOf(c.clienteId)),
-        fecha: c.fecha + " " + (c.hora || ""),
+        fecha: fmtDate(c.fecha),
         importe: sol(c.importe),
         cap: sol(c.capitalAmortizado),
         int: sol(c.interesCobrado),
@@ -749,7 +1293,9 @@
           '">Comprobante</button>' +
           (c.anulado
             ? ""
-            : '<button type="button" class="tool-btn" data-act="pago-anular" data-id="' + esc(c.id) + '">Anular</button>') +
+            : '<button type="button" class="tool-btn tool-btn-bad" data-act="pago-anular" data-id="' +
+              esc(c.id) +
+              '">Anular</button>') +
           "</div>",
       };
     });
@@ -778,20 +1324,25 @@
     var s = E.kpis(db);
     var list = db.movimientosCaja || [];
     var q = ui.q;
-    var filtered = list.filter(function (m) {
-      return !q || matchQ(m, q);
-    });
+    var filtered = byDate(
+      list.filter(function (m) {
+        return !q || matchQ(m, q);
+      }),
+      "fecha"
+    );
     var rows = slice(filtered).map(function (m) {
-      return {
-        fecha: m.fecha + " " + (m.hora || ""),
+    return {
+        fecha: fmtDate(m.fecha),
         tipo: m.tipo,
         desc: m.descripcion || "—",
         sentido: m.sentido,
         monto: (m.sentido === "egreso" ? "− " : "+ ") + sol(m.monto),
         estado: m.anulado ? badge("anulado") : badge("activo"),
         act: m.anulado || m.tipo === "cobranza" || m.tipo === "desembolso" || m.tipo === "pago_ganancia"
-          ? ""
-          : '<button type="button" class="tool-btn" data-act="caja-anular" data-id="' + esc(m.id) + '">Anular</button>',
+          ? '<span class="if-locked">Auditoría</span>'
+          : '<div class="if-acts"><button type="button" class="tool-btn tool-btn-bad" data-act="caja-anular" data-id="' +
+            esc(m.id) +
+            '">Anular</button></div>',
       };
     });
     return (
@@ -835,9 +1386,11 @@
     );
   }
   function renderInversionistas(q) {
-    var list = (db.inversionistas || []).filter(function (i) {
-      return !q || matchQ(i, q);
-    });
+    var list = byName(
+      (db.inversionistas || []).filter(function (i) {
+        return !q || matchQ(i, q);
+      })
+    );
     var rows = slice(list).map(function (i) {
       return {
         who:
@@ -847,14 +1400,20 @@
           esc(i.dni) +
           "</small></div>",
         cap: sol(E.inversionistaCapital(db, i.id)),
-        mod: i.modalidad === "utilidades" ? "Utilidades netas" : "Rentabilidad fija",
+        acuerdo: i.montoAcordado > 0 ? sol(i.montoAcordado) : (i.porcentaje ? Number(i.porcentaje).toLocaleString("es-PE") + " %" : "—"),
         estado: badge(i.estado),
         act:
           '<div class="if-acts"><button type="button" class="tool-btn" data-act="inv-ver" data-id="' +
           esc(i.id) +
           '">Estado</button><button type="button" class="tool-btn" data-act="inv-edit" data-id="' +
           esc(i.id) +
-          '">Editar</button></div>',
+          '">Editar</button>' +
+          (E.inversionistaSePuedeQuitar(db, i.id)
+            ? '<button type="button" class="tool-btn tool-btn-bad" data-act="inv-quitar" data-id="' +
+              esc(i.id) +
+              '">Quitar</button>'
+            : "") +
+          "</div>",
       };
     });
     return (
@@ -867,7 +1426,7 @@
         [
           { key: "who", label: "Inversionista", html: true },
           { key: "cap", label: "Capital vigente" },
-          { key: "mod", label: "Modalidad" },
+          { key: "acuerdo", label: "Acuerdo" },
           { key: "estado", label: "Estado", html: true },
           { key: "act", label: "", html: true },
         ],
@@ -888,8 +1447,9 @@
         { key: "dni", label: "DNI" },
         { key: "apellidos", label: "Apellidos" },
         { key: "nombres", label: "Nombres" },
-        { key: "celular", label: "Celular" },
-        { key: "estado", label: "Estado" },
+        { key: "celular", label: "Teléfono 1" },
+        { key: "ref1Telefono", label: "Teléfono 2" },
+        { key: "correo", label: "Correo" },
       ],
       prestamos: [
         { key: "codigo", label: "Código" },
@@ -953,7 +1513,6 @@
         { key: "dni", label: "DNI" },
         { key: "apellidos", label: "Apellidos" },
         { key: "nombres", label: "Nombres" },
-        { key: "modalidad", label: "Modalidad" },
         { key: "estado", label: "Estado" },
       ],
       ganancias: [
@@ -970,6 +1529,7 @@
         var v = r[c.key];
         if (c.key === "tasa" && v != null && v !== "") o[c.key] = Number(v).toLocaleString("es-PE") + " %";
         else if (moneyKeys[c.key] && v != null && v !== "") o[c.key] = sol(v);
+        else if (c.key === "fecha" || c.key === "fechaDesembolso" || c.key === "fechaVencimiento") o[c.key] = fmtDate(v);
         else o[c.key] = v == null ? "" : v;
       });
       return o;
@@ -1012,40 +1572,6 @@
       "</section>"
     );
   }
-  function renderConfig() {
-    var cfg = E.cfgOf(db);
-    return (
-      pageHead("Sistema", "Configuración", "Tasas y condiciones para préstamos nuevos. No altera cálculos históricos.") +
-      '<form id="cfg-form" class="card if-form" data-act="cfg-save">' +
-      '<div class="form-grid">' +
-      field("empresa", "Empresa", "text", cfg.empresa, { required: true }) +
-      field("simbolo", "Símbolo de moneda", "text", cfg.simbolo) +
-      field("tasaDefault", "Tasa predeterminada %", "number", cfg.tasaDefault, { step: "0.01" }) +
-      field("tipoTasaDefault", "Tipo de tasa", "select", cfg.tipoTasaDefault, {
-        options: [
-          { id: "plana", label: "Plana sobre capital (interés total)" },
-          { id: "periodo", label: "Por periodo sobre capital" },
-          { id: "frances", label: "Sistema francés (cuota fija)" },
-        ],
-      }) +
-      field("frecuenciaDefault", "Frecuencia", "select", cfg.frecuenciaDefault, {
-        options: [
-          { id: "diaria", label: "Diaria" },
-          { id: "semanal", label: "Semanal" },
-          { id: "quincenal", label: "Quincenal" },
-          { id: "mensual", label: "Mensual" },
-        ],
-      }) +
-      field("nCuotasDefault", "Cuotas predeterminadas", "number", cfg.nCuotasDefault, { min: 1 }) +
-      field("avisoLegal", "Aviso de cumplimiento", "textarea", cfg.avisoLegal) +
-      "</div><button type=\"submit\" class=\"tool-btn tool-btn-dark\">Guardar configuración</button></form>" +
-      '<form id="pass-form" class="card if-form" data-act="pass-save"><h3>Cambiar clave</h3><div class="form-grid">' +
-      field("claveActual", "Clave actual", "password", "") +
-      field("claveNueva", "Nueva clave", "password", "") +
-      '</div><button type="submit" class="tool-btn">Actualizar clave</button></form>'
-    );
-  }
-
   function render(route, q) {
     ui.q = foldQ(q);
     if (route === "/clientes") return renderClientes(ui.q);
@@ -1055,8 +1581,29 @@
     if (route === "/caja") return renderCaja();
     if (route === "/inversionistas") return renderInversionistas(ui.q);
     if (route === "/reportes") return renderReportes();
-    if (route === "/configuracion") return renderConfig();
     return renderDashboard();
+  }
+  function tasaForm() {
+    var cfg = E.cfgOf(db);
+    var n = cfg.tasaDefault != null ? cfg.tasaDefault : 10;
+    openModal(
+      "Interés",
+      "Tasa predeterminada",
+      '<form id="tasa-form" class="if-form"><div class="form-grid">' +
+        field("tasaDefault", "Porcentaje %", "number", n, { required: true, step: "0.01", min: 0 }) +
+        "</div>" +
+        modalActions("Guardar") +
+        "</form>"
+    );
+  }
+  function paintRate() {
+    var el = $("rate-btn");
+    if (!el || !db || !E) return;
+    var n = E.cfgOf(db).tasaDefault;
+    if (n == null || !isFinite(Number(n))) n = 10;
+    var txt = Number(n).toLocaleString("es-PE", { maximumFractionDigits: 2 }) + "%";
+    el.setAttribute("aria-label", "Tasa de interés " + txt);
+    el.title = "Interés " + txt;
   }
   function foldQ(q) {
     return String(q || "")
@@ -1071,48 +1618,70 @@
     var search = $("q");
     if (!nav || !app) return;
     var current = parseRoute(location.hash);
+    if (current === "/configuracion") {
+      location.hash = "#/dashboard";
+      current = "/dashboard";
+    }
     nav.innerHTML = navHtml(current);
     app.innerHTML = render(current, search ? search.value : "");
     paintNotices();
     paintMoveBadge();
     paintUser();
+    paintRate();
   }
   function paintUser() {
     var name = (session && session.nombre) || "Administrador";
-    ["side-name", "hello-name", "hello-menu-name"].forEach(function (id) {
+    ["hello-name", "hello-menu-name"].forEach(function (id) {
       if ($(id)) $(id).textContent = name;
     });
   }
   function paintNotices() {
-    var list = overdue();
+    var list = cobrosCerca();
+    var hoy = today();
     var badgeEl = $("notice-badge");
     var sub = $("notice-sub");
     var box = $("notice-list");
+    var enable = $("notice-enable");
     if (!badgeEl || !box) return;
     badgeEl.hidden = !list.length;
     badgeEl.textContent = list.length > 99 ? "99+" : String(list.length);
-    if (sub) sub.textContent = list.length ? list.length + " cuotas por cobrar" : "Sin cuotas vencidas";
+    if (sub) {
+      sub.textContent = list.length
+        ? list.length + " cobro" + (list.length === 1 ? "" : "s") + " vencido" + (list.length === 1 ? "" : "s") + " o por vencer"
+        : "Sin cobros cercanos";
+    }
+    if (enable) enable.hidden = !root.Notification || notifyPerm() === "granted";
     box.innerHTML = list.length
       ? list
           .slice(0, 12)
           .map(function (c) {
             var p = E.find(db.prestamos, c.prestamoId) || {};
+            var late = String(c.fechaVencimiento || "") < hoy;
             return (
-              '<article class="notice-item is-new"><span class="avatar">CV</span><div><strong>Cuota ' +
+              '<button type="button" class="notice-item ' +
+              (late ? "is-late" : "is-soon") +
+              '" data-act="pago-new" data-id="' +
+              esc(p.id || "") +
+              '"><span class="avatar">' +
+              esc(initials(clienteOf(p.clienteId))) +
+              "</span><div><strong>Cuota " +
               esc(c.nro) +
-              " vencida</strong><small>" +
+              " · " +
+              esc(etiquetaCobro(c)) +
+              "</strong><small>" +
               esc(person(clienteOf(p.clienteId))) +
               "</small><small>" +
               esc(p.codigo || "") +
               " · " +
               esc(sol(E.cuotaSaldo(c))) +
               "</small></div><div class=\"notice-time\">" +
-              esc(c.fechaVencimiento) +
-              "</div></article>"
+              esc(fmtDate(c.fechaVencimiento)) +
+              "</div></button>"
             );
           })
           .join("")
-      : '<p class="notice-empty">No hay cuotas vencidas.</p>';
+      : '<p class="notice-empty">No hay cobros cercanos ni vencidos.</p>';
+    alertDesktopCobros();
   }
   function paintMoveBadge() {
     var n = (db && db.auditoria ? db.auditoria.length : 0) || 0;
@@ -1130,15 +1699,15 @@
     $("moves-list").innerHTML = sliceRows.length
       ? sliceRows
           .map(function (m) {
-            return (
+    return (
               '<article class="move-row"><time>' +
-              esc(m.hora || "") +
+              esc(fmtDate(m.fecha)) +
               "</time><p>" +
               esc((m.accion || "") + " · " + (m.entidad || "") + " · " + (m.detalle || "")) +
               "</p></article>"
-            );
-          })
-          .join("")
+              );
+            })
+            .join("")
       : '<p class="moves-empty">Las altas, pagos y anulaciones quedan registradas aquí.</p>';
     var pagerEl = $("moves-pager");
     if (list.length <= PAGE) {
@@ -1167,7 +1736,7 @@
       .filter(function (c) {
         return c.estado !== "inactivo";
       })
-      .map(function (c) {
+          .map(function (c) {
         return { id: c.id, label: person(c) + " · " + c.dni };
       })
       .concat(sel ? [] : []);
@@ -1189,21 +1758,20 @@
     openModal(row.id ? "Editar cliente" : "Registrar cliente", "Datos personales", 
       '<form id="ent-form" class="if-form" data-kind="cliente" data-id="' +
         esc(row.id || "") +
-        '"><div class="form-grid">' +
+        '"><div class="form-grid form-grid-3">' +
         field("dni", "DNI", "text", row.dni, { required: true, maxlength: 8, placeholder: "8 dígitos" }) +
         field("nombres", "Nombres", "text", row.nombres, { required: true }) +
         field("apellidos", "Apellidos", "text", row.apellidos, { required: true }) +
-        field("fechaNacimiento", "Fecha de nacimiento", "date", row.fechaNacimiento) +
-        field("celular", "Celular", "tel", row.celular) +
-        field("ocupacion", "Ocupación", "text", row.ocupacion) +
+        field("celular", "Teléfono 1", "tel", row.celular) +
+        field("ref1Telefono", "Teléfono 2", "tel", row.ref1Telefono) +
+        field("correo", "Correo electrónico", "email", row.correo, { required: true, placeholder: "nombre@correo.com" }) +
         field("direccion", "Dirección", "text", row.direccion) +
-        field("ref1Nombre", "Referencia 1 · nombre", "text", row.ref1Nombre) +
-        field("ref1Telefono", "Referencia 1 · teléfono", "tel", row.ref1Telefono) +
-        field("ref2Nombre", "Referencia 2 · nombre", "text", row.ref2Nombre) +
-        field("ref2Telefono", "Referencia 2 · teléfono", "tel", row.ref2Telefono) +
-        field("estado", "Estado", "select", row.estado || "activo", { options: ["activo", "inactivo"] }) +
-        field("observaciones", "Observaciones", "textarea", row.observaciones) +
-        '</div><div class="form-actions"><button type="button" class="tool-btn" data-act="modal-close">Cancelar</button><button type="submit" class="tool-btn tool-btn-dark">Guardar</button></div></form>'
+        '<input type="hidden" name="estado" value="' +
+        esc(row.estado || "activo") +
+        '" />' +
+        "</div>" +
+        modalActions(row.id ? "Guardar cambios" : "Registrar cliente") +
+        "</form>"
     );
   }
   function avalForm(row) {
@@ -1211,20 +1779,20 @@
     openModal(row.id ? "Editar aval" : "Registrar aval", "Garante",
       '<form id="ent-form" class="if-form" data-kind="aval" data-id="' +
         esc(row.id || "") +
-        '"><div class="form-grid">' +
+        '"><div class="form-grid form-grid-3">' +
         field("clienteId", "Cliente", "select", row.clienteId, { required: true, options: clientesOpts() }) +
         field("dni", "DNI del aval", "text", row.dni, { required: true, maxlength: 8 }) +
         field("nombres", "Nombres", "text", row.nombres, { required: true }) +
         field("apellidos", "Apellidos", "text", row.apellidos, { required: true }) +
         field("celular", "Celular", "tel", row.celular) +
-        field("ocupacion", "Ocupación", "text", row.ocupacion) +
-        field("parentesco", "Parentesco / relación", "text", row.parentesco) +
         field("direccion", "Dirección", "text", row.direccion) +
-        field("documentacion", "Documentación de respaldo", "text", row.documentacion) +
-        field("estado", "Estado", "select", row.estado || "activo", { options: ["activo", "inactivo"] }) +
-        field("observaciones", "Observaciones", "textarea", row.observaciones) +
-        field("constanciaAceptacion", "Constancia de aceptación y autorización", "check", row.constanciaAceptacion) +
-        '</div><div class="form-actions"><button type="button" class="tool-btn" data-act="modal-close">Cancelar</button><button type="submit" class="tool-btn tool-btn-dark">Guardar</button></div></form>'
+        field("parentesco", "Parentesco", "text", row.parentesco, { placeholder: "Hermano, cónyuge, padre" }) +
+        '<input type="hidden" name="estado" value="' +
+        esc(row.estado || "activo") +
+        '" />' +
+        "</div>" +
+        modalActions(row.id ? "Guardar cambios" : "Registrar aval") +
+        "</form>"
     );
   }
   function scheduleHtml(plan) {
@@ -1248,7 +1816,7 @@
         plan.cuotas.map(function (c) {
           return {
             nro: c.nro,
-            fechaVencimiento: c.fechaVencimiento,
+            fechaVencimiento: fmtDate(c.fechaVencimiento),
             capital: sol(c.capital),
             interes: sol(c.interes),
             monto: sol(c.monto),
@@ -1264,18 +1832,14 @@
     openModal(row.id ? "Editar préstamo" : "Registrar préstamo", "Condiciones y cronograma",
       '<form id="loan-form" class="if-form" data-kind="prestamo" data-id="' +
         esc(row.id || "") +
-        '"><div class="form-grid">' +
+        '"><div class="form-grid form-grid-3">' +
         field("clienteId", "Cliente", "select", row.clienteId, { required: true, options: clientesOpts() }) +
         field("avalId", "Aval", "select", row.avalId || "", { options: avalesOpts(row.clienteId) }) +
         field("capital", "Capital S/", "number", row.capital || "", { required: true, step: "0.01", min: 1 }) +
         field("tasa", "Tasa %", "number", row.tasa != null ? row.tasa : cfg.tasaDefault, { required: true, step: "0.01" }) +
-        field("tipoTasa", "Tipo de tasa", "select", row.tipoTasa || cfg.tipoTasaDefault, {
-          options: [
-            { id: "plana", label: "Plana sobre capital (interés total)" },
-            { id: "periodo", label: "Por periodo sobre capital" },
-            { id: "frances", label: "Sistema francés" },
-          ],
-        }) +
+        '<input type="hidden" name="tipoTasa" value="' +
+        esc(row.tipoTasa || cfg.tipoTasaDefault || "plana") +
+        '" />' +
         field("frecuencia", "Frecuencia", "select", row.frecuencia || cfg.frecuenciaDefault, {
           options: [
             { id: "diaria", label: "Diaria" },
@@ -1287,7 +1851,9 @@
         field("nCuotas", "N° de cuotas", "number", row.nCuotas || cfg.nCuotasDefault, { required: true, min: 1 }) +
         field("fechaDesembolso", "Fecha de desembolso", "date", row.fechaDesembolso || today(), { required: true }) +
         field("fechaPrimeraCuota", "Primera cuota", "date", row.fechaPrimeraCuota || today(), { required: true }) +
-        '</div><div id="loan-preview" class="if-preview"></div><div class="form-actions"><button type="button" class="tool-btn" data-act="modal-close">Cancelar</button><button type="submit" class="tool-btn tool-btn-dark">Confirmar desembolso</button></div></form>'
+        '</div><div id="loan-preview" class="if-preview"></div>' +
+        modalActions("Confirmar desembolso") +
+        "</form>"
     );
     refreshLoanPreview();
   }
@@ -1299,17 +1865,18 @@
     var res = E.calcSchedule(data);
     box.innerHTML = res.ok ? scheduleHtml(res.data) : '<p class="if-warn">' + esc(res.message) + "</p>";
   }
-  function pagoForm() {
+  function pagoForm(prestamoId) {
     var activos = (db.prestamos || []).filter(function (p) {
       return p.estado === "activo" || p.estado === "vencido";
     });
+    var selected = prestamoId && E.find(activos, prestamoId) ? prestamoId : activos[0] ? activos[0].id : "";
     openModal("Registrar pago", "Cobranzas",
-      '<form id="pay-form" class="if-form" data-kind="pago"><div class="form-grid">' +
+      '<form id="pay-form" class="if-form" data-kind="pago"><div class="form-grid form-grid-3">' +
         field(
           "prestamoId",
           "Préstamo",
           "select",
-          activos[0] ? activos[0].id : "",
+          selected,
           {
             required: true,
             options: activos.map(function (p) {
@@ -1319,7 +1886,9 @@
         ) +
         field("importe", "Importe recibido S/", "number", "", { required: true, step: "0.01", min: 0.01 }) +
         field("fecha", "Fecha", "date", today(), { required: true }) +
-        '</div><div id="pay-info" class="if-preview"></div><div class="form-actions"><button type="button" class="tool-btn" data-act="modal-close">Cancelar</button><button type="submit" class="tool-btn tool-btn-dark">Registrar cobranza</button></div></form>'
+        '</div><div id="pay-info" class="if-preview"></div>' +
+        modalActions("Registrar cobranza") +
+        "</form>"
     );
     refreshPayInfo();
   }
@@ -1358,7 +1927,7 @@
           if (E.cuotaSaldo(c) > 0.009 && c.fechaVencimiento < today()) st = "vencido";
           return {
             nro: c.nro,
-            fecha: c.fechaVencimiento,
+            fecha: fmtDate(c.fechaVencimiento),
             monto: sol(c.monto),
             pagado: sol(c.pagado || 0),
             saldo: sol(E.cuotaSaldo(c)),
@@ -1378,14 +1947,16 @@
       { id: "otro_egreso", label: "Otro egreso" },
     ];
     openModal(sentido === "ingreso" ? "Registrar ingreso" : "Registrar egreso", "Caja",
-      '<form id="ent-form" class="if-form" data-kind="caja"><div class="form-grid">' +
+      '<form id="ent-form" class="if-form" data-kind="caja"><div class="form-grid form-grid-3">' +
         field("tipo", "Tipo", "select", "", { options: sentido === "ingreso" ? tiposIn : tiposOut }) +
         field("monto", "Monto S/", "number", "", { required: true, step: "0.01", min: 0.01 }) +
         field("fecha", "Fecha", "date", today(), { required: true }) +
         field("descripcion", "Descripción", "textarea", "") +
         '<input type="hidden" name="sentido" value="' +
         esc(sentido) +
-        '" /></div><div class="form-actions"><button type="button" class="tool-btn" data-act="modal-close">Cancelar</button><button type="submit" class="tool-btn tool-btn-dark">Guardar</button></div></form>'
+        '" /></div>' +
+        modalActions(sentido === "ingreso" ? "Registrar ingreso" : "Registrar egreso") +
+        "</form>"
     );
   }
   function invForm(row) {
@@ -1393,33 +1964,34 @@
     openModal(row.id ? "Editar inversionista" : "Registrar inversionista", "Capital de terceros",
       '<form id="ent-form" class="if-form" data-kind="inv" data-id="' +
         esc(row.id || "") +
-        '"><p class="if-legal">Registrar inversionistas no equivale a autorización para captar dinero del público.</p><div class="form-grid">' +
+        '"><p class="if-legal">Registrar inversionistas no equivale a autorización para captar dinero del público.</p><div class="form-grid form-grid-3">' +
         field("dni", "DNI", "text", row.dni, { required: true, maxlength: 8 }) +
         field("nombres", "Nombres", "text", row.nombres, { required: true }) +
         field("apellidos", "Apellidos", "text", row.apellidos, { required: true }) +
         field("celular", "Celular", "tel", row.celular) +
         field("direccion", "Dirección", "text", row.direccion) +
-        field("fechaIncorporacion", "Fecha de incorporación", "date", row.fechaIncorporacion || today()) +
         (row.id ? "" : field("montoAportado", "Monto del primer aporte S/", "number", "", { step: "0.01" })) +
         (row.id ? "" : field("fechaAporte", "Fecha del aporte", "date", today())) +
-        field("modalidad", "Modalidad", "select", row.modalidad || "fija", {
-          options: [
-            { id: "fija", label: "Rentabilidad fija acordada" },
-            { id: "utilidades", label: "Participación en utilidades netas" },
-          ],
-        }) +
         field("porcentaje", "% acordado", "number", row.porcentaje || "", { step: "0.01" }) +
         field("montoAcordado", "Monto fijo por periodo S/", "number", row.montoAcordado || "", { step: "0.01" }) +
-        field("frecuenciaLiquidacion", "Frecuencia de liquidación", "select", row.frecuenciaLiquidacion || "mensual", {
-          options: [
-            { id: "mensual", label: "Mensual" },
-            { id: "quincenal", label: "Quincenal" },
-            { id: "semanal", label: "Semanal" },
-          ],
-        }) +
-        field("fechaVencimiento", "Vencimiento del acuerdo", "date", row.fechaVencimiento) +
-        field("estado", "Estado", "select", row.estado || "activo", { options: ["activo", "inactivo"] }) +
-        '</div><div class="form-actions"><button type="button" class="tool-btn" data-act="modal-close">Cancelar</button><button type="submit" class="tool-btn tool-btn-dark">Guardar</button></div></form>'
+        '<input type="hidden" name="fechaIncorporacion" value="' +
+        esc(row.fechaIncorporacion || today()) +
+        '" />' +
+        '<input type="hidden" name="fechaVencimiento" value="' +
+        esc(row.fechaVencimiento || "") +
+        '" />' +
+        '<input type="hidden" name="modalidad" value="' +
+        esc(row.modalidad || "fija") +
+        '" />' +
+        '<input type="hidden" name="frecuenciaLiquidacion" value="' +
+        esc(row.frecuenciaLiquidacion || "mensual") +
+        '" />' +
+        '<input type="hidden" name="estado" value="' +
+        esc(row.estado || "activo") +
+        '" />' +
+        "</div>" +
+        modalActions(row.id ? "Guardar cambios" : "Registrar inversionista") +
+        "</form>"
     );
   }
   function showHistorial(id) {
@@ -1431,7 +2003,10 @@
         esc(h.cliente.dni) +
         " · " +
         esc(h.cliente.celular || "sin celular") +
-        "</p><h3>Préstamos</h3>" +
+        " · " +
+        esc(h.cliente.correo || "sin correo") +
+        "</p>" +
+        "<h3>Préstamos</h3>" +
         table(
           [
             { key: "codigo", label: "Código" },
@@ -1453,7 +2028,8 @@
               .join("") +
             "</ul>"
           : empty("Sin avales.")) +
-        "</div>"
+        "</div>" +
+        modalCloseBar()
     );
   }
   function showCronograma(id) {
@@ -1473,8 +2049,6 @@
         esc(p.tasa) +
         "% · " +
         esc(p.frecuencia) +
-        " · " +
-        esc(p.tipoTasa) +
         "</p>" +
         table(
           [
@@ -1488,40 +2062,46 @@
           cuotas.map(function (c) {
             return {
               nro: c.nro,
-              fecha: c.fechaVencimiento,
+              fecha: fmtDate(c.fechaVencimiento),
               monto: sol(c.monto),
               pagado: sol(c.pagado || 0),
               saldo: sol(E.cuotaSaldo(c)),
               est: badge(c.estado),
             };
           })
-        )
+        ) +
+        modalCloseBar()
     );
   }
   function showComprobante(id) {
     var c = E.find(db.cobranzas, id);
     if (!c) return;
     var p = E.find(db.prestamos, c.prestamoId) || {};
+    var cli = clienteOf(c.clienteId);
+    var cuota = E.find(db.cuotas, c.cuotaId);
+    var nroCuota = cuota && cuota.nro ? String(cuota.nro) : "—";
     openModal("Comprobante de pago", c.codigo,
       '<div class="if-recibo"><img src="JL.jpeg" alt="Impulsa Financiera" /><p><strong>' +
-        esc(person(clienteOf(c.clienteId))) +
-        "</strong></p><p>Préstamo " +
+        esc(person(cli)) +
+        "</strong></p>" +
+        (cli.correo ? "<p>" + esc(cli.correo) + "</p>" : "") +
+        "<p>Préstamo " +
         esc(p.codigo || "") +
-        "</p><div class=\"if-plan-kpis\"><div><span>Importe</span><b>" +
+        "</p><div class=\"if-plan-kpis\"><div><span>Número de cuota</span><b>" +
+        esc(nroCuota) +
+        "</b></div><div><span>Monto que se pagó</span><b>" +
         esc(sol(c.importe)) +
-        "</b></div><div><span>Capital</span><b>" +
-        esc(sol(c.capitalAmortizado)) +
-        "</b></div><div><span>Interés</span><b>" +
-        esc(sol(c.interesCobrado)) +
-        "</b></div></div><p class=\"muted\">Saldo pendiente " +
+        "</b></div><div><span>Saldo pendiente</span><b>" +
         esc(sol(c.saldoPendiente)) +
-        " · " +
-        esc(c.fecha) +
-        " " +
-        esc(c.hora || "") +
+        "</b></div></div><p class=\"if-letras\">Son: " +
+        esc(numeroEnLetras(c.importe)) +
+        "</p><p class=\"muted\">" +
+        esc(fmtDate(c.fecha)) +
         " · " +
         esc(c.usuario || "") +
-        '</p><button type="button" class="tool-btn tool-btn-dark" data-act="recibo-print">Imprimir / PDF</button></div>'
+        "</p>" +
+        modalCloseBar('<button type="button" class="tool-btn tool-btn-ghost" data-act="recibo-print">Imprimir / PDF</button>') +
+        "</div>"
     );
   }
   function showInv(id) {
@@ -1538,7 +2118,7 @@
         "</b></div><div><span>Estimado del periodo</span><b>" +
         esc(sol(d.gananciaEstimada)) +
         "</b></div></div><p class=\"muted\">Estimado según el acuerdo. No es una rentabilidad garantizada.</p>" +
-        '<div class="form-actions"><button type="button" class="tool-btn" data-act="inv-aporte" data-id="' +
+        '<div class="if-acts" style="justify-content:flex-start;margin:8px 22px 16px"><button type="button" class="tool-btn" data-act="inv-aporte" data-id="' +
         esc(id) +
         '">Aporte</button><button type="button" class="tool-btn" data-act="inv-dev" data-id="' +
         esc(id) +
@@ -1553,7 +2133,7 @@
             { key: "monto", label: "Monto" },
           ],
           d.aportes.map(function (a) {
-            return { fecha: a.fecha, tipo: a.tipo, monto: sol(a.monto) };
+            return { fecha: fmtDate(a.fecha), tipo: a.tipo, monto: sol(a.monto) };
           })
         ) +
         "<h3>Liquidaciones</h3>" +
@@ -1566,7 +2146,7 @@
           ],
           d.liquidaciones.map(function (l) {
             return {
-              fecha: l.fecha,
+              fecha: fmtDate(l.fecha),
               monto: sol(l.monto),
               estado: badge(l.estado),
               act:
@@ -1643,12 +2223,13 @@
         { key: "dni", label: "DNI", width: 14 },
         { key: "apellidos", label: "Apellidos", width: 22 },
         { key: "nombres", label: "Nombres", width: 22 },
-        { key: "celular", label: "Celular", width: 14 },
+        { key: "celular", label: "Teléfono 1", width: 14 },
+        { key: "tel2", label: "Teléfono 2", width: 14 },
+        { key: "correo", label: "Correo", width: 24 },
         { key: "direccion", label: "Dirección", width: 28 },
-        { key: "estado", label: "Estado", width: 12 },
       ];
       rows = raw.map(function (c) {
-        return { dni: c.dni, apellidos: c.apellidos, nombres: c.nombres, celular: c.celular || "", direccion: c.direccion || "", estado: c.estado };
+        return { dni: c.dni, apellidos: c.apellidos, nombres: c.nombres, celular: c.celular || "", tel2: c.ref1Telefono || "", correo: c.correo || "", direccion: c.direccion || "" };
       });
     } else if (tipo.indexOf("prestamo") === 0) {
       cols = [
@@ -1671,7 +2252,7 @@
           capital: p.capital,
           tasa: p.tasa,
           cuotas: p.nCuotas,
-          desembolso: p.fechaDesembolso,
+          desembolso: fmtDate(p.fechaDesembolso),
           saldo: E.prestamoSaldo(db, p.id),
           estado: p.estado,
         };
@@ -1689,7 +2270,7 @@
       rows = raw.map(function (c) {
         return {
           codigo: c.codigo,
-          fecha: c.fecha,
+          fecha: fmtDate(c.fecha),
           cliente: person(clienteOf(c.clienteId)),
           importe: c.importe,
           capital: c.capitalAmortizado,
@@ -1712,7 +2293,7 @@
           prestamo: p.codigo || "",
           cliente: person(clienteOf(p.clienteId)),
           nro: c.nro,
-          vence: c.fechaVencimiento,
+          vence: fmtDate(c.fechaVencimiento),
           monto: c.monto,
           saldo: E.cuotaSaldo(c),
         };
@@ -1721,12 +2302,11 @@
       cols = [
         { key: "dni", label: "DNI", width: 12 },
         { key: "nombre", label: "Inversionista", width: 26 },
-        { key: "modalidad", label: "Modalidad", width: 16 },
         { key: "capital", label: "Capital vigente (S/)", width: 18, num: true },
         { key: "estado", label: "Estado", width: 12 },
       ];
       rows = raw.map(function (i) {
-        return { dni: i.dni, nombre: person(i), modalidad: i.modalidad, capital: E.inversionistaCapital(db, i.id), estado: i.estado };
+        return { dni: i.dni, nombre: person(i), capital: E.inversionistaCapital(db, i.id), estado: i.estado };
       });
     } else {
       cols = [
@@ -1737,12 +2317,12 @@
         { key: "monto", label: "Monto (S/)", width: 14, num: true },
       ];
       rows = raw.map(function (m) {
-        return { fecha: m.fecha || m.createdAt, tipo: m.tipo, descripcion: m.descripcion || "", sentido: m.sentido || m.estado || "", monto: m.monto };
+        return { fecha: fmtDate(m.fecha || m.createdAt), tipo: m.tipo, descripcion: m.descripcion || "", sentido: m.sentido || m.estado || "", monto: m.monto };
       });
     }
     return {
       title: "IMPULSA FINANCIERA",
-      subtitle: (titles[tipo] || "Reporte") + " · " + today() + " · Uso interno",
+      subtitle: (titles[tipo] || "Reporte") + " · " + fmtDate(today()) + " · Uso interno",
       sheet: (titles[tipo] || "Reporte").slice(0, 31),
       columns: cols,
       rows: rows,
@@ -1776,8 +2356,42 @@
     if (act === "cliente-new") return clienteForm();
     if (act === "cliente-edit") return clienteForm(E.find(db.clientes, id));
     if (act === "cliente-hist") return showHistorial(id);
+    if (act === "cliente-quitar") {
+      return ask({
+        title: "Quitar cliente",
+        text: "Solo se permite si no tiene préstamos. Los avales libres del cliente también se retiran.",
+        ok: "Quitar",
+        danger: true,
+        icon: "warning",
+      }).then(function (ok) {
+        if (!ok) return;
+        return run("quitarCliente", { id: id })
+          .then(function () {
+            swalOk("Cliente retirado", "No tenía préstamos. El registro ya no figura en la cartera.");
+            paint();
+          })
+          .catch(actErr);
+      });
+    }
     if (act === "aval-new") return avalForm();
     if (act === "aval-edit") return avalForm(E.find(db.avales, id));
+    if (act === "aval-quitar") {
+      return ask({
+        title: "Quitar aval",
+        text: "Solo se permite si no respalda ningún préstamo.",
+        ok: "Quitar",
+        danger: true,
+        icon: "warning",
+      }).then(function (ok) {
+        if (!ok) return;
+        return run("quitarAval", { id: id })
+          .then(function () {
+            swalOk("Aval retirado", "No estaba ligado a un préstamo.");
+            paint();
+          })
+          .catch(actErr);
+      });
+    }
     if (act === "prestamo-new") {
       if (E.cajaSaldo(db) <= 0) {
         swalInfo("Caja sin capital", "Registre primero un aporte de capital en Caja. Sin saldo no se puede desembolsar un préstamo.");
@@ -1786,7 +2400,7 @@
       return prestamoForm();
     }
     if (act === "prestamo-ver") return showCronograma(id);
-    if (act === "pago-new") return pagoForm();
+    if (act === "pago-new") return pagoForm(id);
     if (act === "pago-ver") return showComprobante(id);
     if (act === "pago-anular") {
       return ask({
@@ -1827,6 +2441,23 @@
     if (act === "inv-new") return invForm();
     if (act === "inv-edit") return invForm(E.find(db.inversionistas, id));
     if (act === "inv-ver") return showInv(id);
+    if (act === "inv-quitar") {
+      return ask({
+        title: "Quitar inversionista",
+        text: "Solo se permite si no tiene capital, aportes ni liquidaciones.",
+        ok: "Quitar",
+        danger: true,
+        icon: "warning",
+      }).then(function (ok) {
+        if (!ok) return;
+        return run("quitarInversionista", { id: id })
+          .then(function () {
+            swalOk("Inversionista retirado", "No tenía capital ni historial financiero.");
+            paint();
+          })
+          .catch(actErr);
+      });
+    }
     if (act === "inv-aporte" || act === "inv-dev") {
       var tipo = act === "inv-dev" ? "devolucion_inversionista" : "aporte_inversionista";
       openModal(act === "inv-dev" ? "Devolver capital" : "Registrar aporte", "Inversionista",
@@ -1834,10 +2465,12 @@
           esc(id) +
           '" data-tipo="' +
           esc(tipo) +
-          '"><div class="form-grid">' +
+          '"><div class="form-grid form-grid-3">' +
           field("monto", "Monto S/", "number", "", { required: true, step: "0.01" }) +
           field("fecha", "Fecha", "date", today(), { required: true }) +
-          '</div><div class="form-actions"><button type="submit" class="tool-btn tool-btn-dark">Guardar</button></div></form>'
+          "</div>" +
+          modalActions(act === "inv-dev" ? "Registrar devolución" : "Registrar aporte") +
+          "</form>"
       );
       return;
     }
@@ -1930,7 +2563,6 @@
   }
   function showPanelLogin() {
     if ($("panel-login")) return;
-    var first = !(db && db.usuarios && db.usuarios.length);
     var gate = document.createElement("div");
     gate.id = "panel-login";
     gate.className = "panel-login";
@@ -1938,67 +2570,51 @@
       '<form class="panel-login-card" id="panel-login-form" autocomplete="off">' +
       '<img class="panel-login-brand" src="JL.jpeg" alt="Impulsa Financiera" />' +
       '<p class="panel-login-kicker">Impulsa Financiera</p>' +
-      "<h1>" +
-      (first ? "Crear acceso" : "Iniciar sesión") +
-      "</h1>" +
-      '<p class="panel-login-lead">' +
-      (first
-        ? "Defina el usuario y la clave del administrador. No use una clave corta."
-        : "Acceso al panel de préstamos, cobranzas y capital.") +
-      "</p>" +
-      (first
-        ? '<label>Nombre<input id="panel-nombre" name="nombre" required value="Administrador" /></label>'
-        : "") +
-      '<label>Usuario<input id="panel-user" name="usuario" required autocomplete="username" /></label>' +
+      "<h1>Iniciar sesión</h1>" +
+      '<p class="panel-login-lead">Acceso exclusivo del administrador.</p>' +
+      '<label>Usuario<input id="panel-user" name="usuario" required autocomplete="username" value="Administrador" readonly /></label>' +
       '<label>Clave<input id="panel-pass" type="password" name="clave" required autocomplete="current-password" /></label>' +
       '<p class="panel-login-err" id="panel-login-err" hidden></p>' +
-      '<button type="submit" id="panel-login-btn"><span class="panel-login-spin" id="panel-login-spin" hidden></span><span id="panel-login-label">' +
-      (first ? "Crear y entrar" : "Iniciar sesión") +
-      "</span></button></form>";
+      '<button type="submit" id="panel-login-btn"><span class="panel-login-spin" id="panel-login-spin" hidden></span><span id="panel-login-label">Iniciar sesión</span></button></form>';
     document.body.appendChild(gate);
     $("panel-login-form").addEventListener("submit", function (e) {
       e.preventDefault();
+      enableDesktopNotices();
       var err = $("panel-login-err");
       var btn = $("panel-login-btn");
       var spin = $("panel-login-spin");
       var label = $("panel-login-label");
       var payload = {
-        usuario: $("panel-user").value,
+        usuario: "Administrador",
         clave: $("panel-pass").value,
-        nombre: $("panel-nombre") ? $("panel-nombre").value : "",
       };
       btn.disabled = true;
       spin.hidden = false;
       err.hidden = true;
-      var action = first ? "setupAdmin" : "login";
-      run(action, payload)
+      run("login", payload)
         .then(function (res) {
           session = res.data;
           try {
             sessionStorage.setItem(PANEL_KEY, JSON.stringify(session));
           } catch (ignore) {}
           gate.remove();
-          var next = first
-            ? swalOk("Acceso creado", "Ya puede operar clientes, préstamos, cobranzas y caja.")
-            : toast("Bienvenido.");
-          return Promise.resolve(next).then(function () {
-            if (booted) paint();
-            else boot();
-          });
+          if (!booted) boot();
+          else paint();
+          return welcomeAfterLogin();
         })
         .catch(function (e2) {
-          var msg = (e2 && e2.message) || "No se pudo ingresar.";
-          err.hidden = false;
+          var msg = (e2 && e2.message) || "Usuario o clave incorrectos.";
+        err.hidden = false;
           err.textContent = msg;
           swalErr(msg);
           btn.disabled = false;
           spin.hidden = true;
-          label.textContent = first ? "Crear y entrar" : "Iniciar sesión";
-        });
+          label.textContent = "Iniciar sesión";
+      });
     });
     root.setTimeout(function () {
-      var u = $("panel-user");
-      if (u) u.focus();
+      var p = $("panel-pass");
+      if (p) p.focus();
     }, 30);
   }
 
@@ -2032,10 +2648,31 @@
     });
     $("backdrop").addEventListener("click", closeMenu);
     $("notice-btn").addEventListener("click", function (e) {
-      e.stopPropagation();
+        e.stopPropagation();
       var panel = $("notice-panel");
       panel.hidden = !panel.hidden;
       $("notice-btn").setAttribute("aria-expanded", panel.hidden ? "false" : "true");
+      if (!panel.hidden) enableDesktopNotices().then(function () { paintNotices(); });
+    });
+    if ($("notice-enable")) {
+      $("notice-enable").addEventListener("click", function (e) {
+        e.stopPropagation();
+        enableDesktopNotices().then(function (ok) {
+          paintNotices();
+          if (ok) swalOk("Avisos activos", "Esta computadora le avisará cuando un cobro se acerque o esté vencido.");
+          else swalInfo("Permiso necesario", "En el navegador, permita notificaciones para Impulsa Financiera.");
+        });
+      });
+    }
+    if (root.navigator && root.navigator.serviceWorker) {
+      root.navigator.serviceWorker.addEventListener("message", function (e) {
+        if (e.data && e.data.type === "open-cobranzas") location.hash = "#/cobranzas";
+      });
+    }
+    document.addEventListener("visibilitychange", function () {
+      if (!document.hidden && session) {
+        paintNotices();
+      }
     });
     document.addEventListener("click", function (e) {
       if (!e.target.closest(".notice")) closeNotices();
@@ -2055,7 +2692,7 @@
         text: "Saldrá del panel. Los datos quedan en este dispositivo.",
         ok: "Salir",
         icon: "question",
-      }).then(function (ok) {
+          }).then(function (ok) {
         if (ok) logoutPanel();
       });
     });
@@ -2082,8 +2719,11 @@
       }
     });
     $("form-close").addEventListener("click", closeModal);
-    $("form-modal").addEventListener("click", function (e) {
-      if (e.target.id === "form-modal") closeModal();
+    document.addEventListener("keydown", function (e) {
+      if (e.key === "Escape" && $("form-modal") && $("form-modal").classList.contains("open")) closeModal();
+    });
+    $("rate-btn").addEventListener("click", function () {
+      tasaForm();
     });
     $("refresh-btn").addEventListener("click", function () {
       reload().then(function () {
@@ -2098,25 +2738,25 @@
       var btn = e.target.closest("button[data-act], a[data-act]");
       if (!btn) return;
       if (btn.tagName === "BUTTON" && btn.type === "submit") return;
-      e.preventDefault();
+        e.preventDefault();
       onAct(btn.getAttribute("data-act"), btn);
     });
     document.addEventListener("submit", function (e) {
       var form = e.target;
-      if (form.id === "cfg-form") {
+      if (form.id === "tasa-form") {
         e.preventDefault();
-        run("saveConfig", formVal(form)).then(function () {
-          swalOk("Configuración guardada", "Las tasas nuevas no cambian préstamos ya desembolsados.");
-          paint();
-        }).catch(actErr);
+        var tasa = Number(formVal(form).tasaDefault);
+        if (!isFinite(tasa) || tasa < 0 || tasa > 100) {
+          swalErr("Indique un interés entre 0 y 100.");
         return;
       }
-      if (form.id === "pass-form") {
-        e.preventDefault();
-        run("changePassword", formVal(form)).then(function () {
-          swalOk("Clave actualizada", "Use la nueva clave en el próximo ingreso.");
-          form.reset();
-        }).catch(actErr);
+        run("saveConfig", { tasaDefault: tasa })
+          .then(function () {
+            closeModal();
+          paint();
+            swalOk("Interés actualizado", "Los préstamos nuevos usarán " + tasa.toLocaleString("es-PE", { maximumFractionDigits: 2 }) + "%. Los desembolsos anteriores no cambian.");
+          })
+          .catch(actErr);
         return;
       }
       if (form.id === "aporte-form") {
@@ -2129,7 +2769,7 @@
             var invId = payload.inversionistaId;
             closeModal();
             swalOk("Capital actualizado", payload.tipo === "devolucion_inversionista" ? "Se devolvió capital. No se registró como ganancia." : "El aporte quedó en caja, separado de las ganancias.");
-            paint();
+          paint();
             showInv(invId);
           })
           .catch(actErr);
@@ -2168,16 +2808,32 @@
       paint();
     });
     paint();
+    var pollTimer = 0;
+    var pollMs = Number((root.ImpulsaConfig && root.ImpulsaConfig.pollMs) || 0);
+    if (pollMs && root.ImpulsaApi.usesRemote()) {
+      pollTimer = root.setInterval(function () {
+        if (document.hidden || !session) return;
+        reload()
+          .then(paint)
+      .catch(function () {});
+      }, pollMs);
+    }
     if (root.navigator && "serviceWorker" in root.navigator && location.protocol !== "file:") {
       root.navigator.serviceWorker.register("./sw.js").catch(function () {});
     }
   }
 
   function start() {
-    reload().then(function () {
-      if (!panelOpen()) showPanelLogin();
-      else boot();
-    });
+    panelOpen();
+    reload()
+      .then(function () {
+        if (!session) showPanelLogin();
+    else boot();
+      })
+      .catch(function () {
+        if (!session) showPanelLogin();
+        else boot();
+      });
   }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", start);
   else start();

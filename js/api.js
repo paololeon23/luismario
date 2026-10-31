@@ -47,7 +47,10 @@
     if (!store || !engine) return Promise.resolve(engine ? engine.emptyDb() : {});
     return store.loadDb().then(function (raw) {
       localDb = engine.normalizeDb(raw);
-      return localDb;
+      if (!apiUrl() && engine.maybeSeed) localDb = engine.maybeSeed(localDb);
+      return persistLocal(localDb).then(function () {
+        return localDb;
+      });
     });
   }
   function persistLocal(db) {
@@ -127,11 +130,24 @@
     if (method === "GET") inflight[key] = started;
     return started;
   }
+  function apiUrl() {
+    return String((cfg().apiUrl || "").trim());
+  }
+  function usesRemote() {
+    return !!(apiUrl() && online());
+  }
+  function cacheDump(pack) {
+    var engine = root.ImpulsaEngine;
+    if (!pack || !engine) return Promise.resolve(localDb);
+    localDb = engine.normalizeDb(pack);
+    return persistLocal(localDb).then(function () {
+      return localDb;
+    });
+  }
   function callRemote(action, payload, user) {
-    var url = String((cfg().apiUrl || "").trim());
     return request({
       method: "POST",
-      url: url,
+      url: apiUrl(),
       body: { action: action, payload: payload || {}, session: user || null },
       fresh: true,
       retry: false,
@@ -147,12 +163,35 @@
       return data;
     });
   }
+  function sync(user) {
+    if (!usesRemote() || !user || !user.id) return loadLocal();
+    return callRemote("db", {}, user).then(function (res) {
+      return cacheDump(res && res.data);
+    });
+  }
   function call(action, payload, user) {
-    var url = String((cfg().apiUrl || "").trim());
-    if (url && online()) {
-      return callRemote(action, payload, user).catch(function (err) {
-        if (err && err.status === 422) throw err;
-        return runLocal(action, payload, user);
+    if (usesRemote()) {
+      return callRemote(action, payload, user).then(function (data) {
+        var nextUser = user;
+        if ((action === "login" || action === "setupAdmin") && data && data.data && data.data.id) {
+          nextUser = data.data;
+        }
+        if (data && data.db) {
+          return cacheDump(data.db).then(function () {
+            return data;
+          });
+        }
+        if (action === "db") {
+          return cacheDump(data && data.data).then(function () {
+            return data;
+          });
+        }
+        if (nextUser && nextUser.id) {
+          return sync(nextUser).then(function () {
+            return data;
+          });
+        }
+        return data;
       });
     }
     return runLocal(action, payload, user);
@@ -162,6 +201,8 @@
     request: request,
     online: online,
     call: call,
+    sync: sync,
+    usesRemote: usesRemote,
     loadLocal: loadLocal,
     cacheDb: function () {
       return localDb;

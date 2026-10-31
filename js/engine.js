@@ -20,6 +20,7 @@
     dni_aval_duplicado: "Ese aval ya está registrado para este cliente.",
     nombre_invalido: "Escriba nombres y apellidos.",
     celular_invalido: "El celular no es válido.",
+    correo_invalido: "Escriba un correo electrónico válido.",
     cliente_invalido: "No se encontró el cliente.",
     aval_invalido: "No se encontró el aval.",
     prestamo_invalido: "No se encontró el préstamo.",
@@ -45,51 +46,133 @@
     tabla_desconocida: "No se reconoció la consulta.",
     accion_desconocida: "El servidor no reconoció la petición.",
     dato_requerido: "Complete los datos obligatorios.",
+    clave_fija: "El acceso del administrador es fijo y no se cambia.",
+    cliente_con_prestamos: "No se puede quitar: el cliente ya tiene préstamos.",
+    aval_en_uso: "No se puede quitar: el aval está ligado a un préstamo.",
+    inversionista_con_capital: "No se puede quitar: el inversionista tiene capital o historial.",
   };
+  var ADMIN_USER = "Administrador";
+  var ADMIN_CLAVE = "luismario2026";
 
   function money(n) {
     var x = Number(n);
     if (!isFinite(x)) return 0;
     return Math.round(x * 100) / 100;
   }
-  function nowIso() {
-    return new Date().toISOString();
+  function pad(n) {
+    n = Number(n) || 0;
+    return n < 10 ? "0" + n : String(n);
+  }
+  function stampMs(s) {
+    if (Object.prototype.toString.call(s) === "[object Date]") {
+      return isNaN(s.getTime()) ? 0 : s.getTime();
+    }
+    var str = String(s || "").trim();
+    if (!str) return 0;
+    var pe = str.match(/^(\d{2})-(\d{2})-(\d{4})(?:[ T](\d{2}):(\d{2})(?::(\d{2}))?)?/);
+    if (pe && Number(pe[1]) >= 1 && Number(pe[1]) <= 31 && Number(pe[2]) >= 1 && Number(pe[2]) <= 12) {
+      return Date.UTC(Number(pe[3]), Number(pe[2]) - 1, Number(pe[1]), Number(pe[4] || 0) + 5, Number(pe[5] || 0), Number(pe[6] || 0));
+    }
+    var iso = str.match(/^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2})(?::(\d{2}(?:\.\d+)?))?)?/);
+    if (iso) {
+      if (/Z|[+-]\d{2}:?\d{2}$/.test(str)) {
+        var parsed = Date.parse(str);
+        return isNaN(parsed) ? 0 : parsed;
+      }
+      return Date.UTC(
+        Number(iso[1]),
+        Number(iso[2]) - 1,
+        Number(iso[3]),
+        Number(iso[4] || 0) + 5,
+        Number(iso[5] || 0),
+        Number(String(iso[6] || "0").split(".")[0])
+      );
+    }
+    var t = Date.parse(str);
+    return isNaN(t) ? 0 : t;
+  }
+  function asDate(d) {
+    if (Object.prototype.toString.call(d) === "[object Date]" && !isNaN(d.getTime())) return d;
+    var ms = stampMs(d);
+    return ms ? new Date(ms) : new Date();
   }
   function limaDate(d) {
-    var date = d ? new Date(d) : new Date();
-    if (isNaN(date.getTime())) return todayKey();
-    var p = new Intl.DateTimeFormat("en-CA", {
-      timeZone: "America/Lima",
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-    }).formatToParts(date);
-    var map = {};
-    p.forEach(function (x) {
-      map[x.type] = x.value;
-    });
-    return map.year + "-" + map.month + "-" + map.day;
+    var date = asDate(d);
+    try {
+      var p = new Intl.DateTimeFormat("en-CA", {
+        timeZone: "America/Lima",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+      }).formatToParts(date);
+      var map = {};
+      p.forEach(function (x) {
+        map[x.type] = x.value;
+      });
+      if (map.year && map.month && map.day) return map.year + "-" + map.month + "-" + map.day;
+    } catch (err) {}
+    var fall = new Date(date.getTime() - 5 * 3600000);
+    return fall.getUTCFullYear() + "-" + pad(fall.getUTCMonth() + 1) + "-" + pad(fall.getUTCDate());
+  }
+  function limaHms(d) {
+    var date = asDate(d);
+    try {
+      var p = new Intl.DateTimeFormat("en-GB", {
+        timeZone: "America/Lima",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        hour12: false,
+      }).formatToParts(date);
+      var map = {};
+      p.forEach(function (x) {
+        map[x.type] = x.value;
+      });
+      if (map.hour != null && map.minute != null && map.second != null) {
+        return pad(map.hour) + ":" + pad(map.minute) + ":" + pad(map.second);
+      }
+    } catch (err) {}
+    var fall = new Date(date.getTime() - 5 * 3600000);
+    return pad(fall.getUTCHours()) + ":" + pad(fall.getUTCMinutes()) + ":" + pad(fall.getUTCSeconds());
   }
   function limaTime(d) {
-    var date = d ? new Date(d) : new Date();
-    return new Intl.DateTimeFormat("es-PE", {
-      timeZone: "America/Lima",
-      hour: "2-digit",
-      minute: "2-digit",
-      hour12: false,
-    }).format(date);
+    return limaHms(d).slice(0, 5);
+  }
+  function limaStamp(d) {
+    var ymd = limaDate(d);
+    var p = ymd.split("-");
+    return p[2] + "-" + p[1] + "-" + p[0] + " " + limaHms(d);
+  }
+  function nowIso() {
+    return limaStamp();
   }
   function todayKey() {
     return limaDate(new Date());
   }
-  function pad(n) {
-    return n < 10 ? "0" + n : String(n);
-  }
   function parseDay(s) {
-    var p = String(s || "").slice(0, 10).split("-");
-    if (p.length !== 3) return null;
-    var d = new Date(Number(p[0]), Number(p[1]) - 1, Number(p[2]));
-    return isNaN(d.getTime()) ? null : d;
+    if (Object.prototype.toString.call(s) === "[object Date]" && !isNaN(s.getTime())) {
+      return new Date(s.getFullYear(), s.getMonth(), s.getDate());
+    }
+    var str = String(s || "").trim();
+    if (!str) return null;
+    var pe = str.match(/^(\d{2})-(\d{2})-(\d{4})/);
+    if (pe && Number(pe[1]) <= 31 && Number(pe[2]) <= 12) {
+      var dPe = new Date(Number(pe[3]), Number(pe[2]) - 1, Number(pe[1]));
+      return isNaN(dPe.getTime()) ? null : dPe;
+    }
+    var iso = str.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (iso) {
+      var dIso = new Date(Number(iso[1]), Number(iso[2]) - 1, Number(iso[3]));
+      return isNaN(dIso.getTime()) ? null : dIso;
+    }
+    return null;
+  }
+  function dayFrom(s) {
+    var d = parseDay(s);
+    return d ? limaDate(d) : "";
+  }
+  function fechaKey(s) {
+    return dayFrom(s) || todayKey();
   }
   function dayKey(d) {
     return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate());
@@ -122,6 +205,10 @@
   function isPhone(s) {
     var d = digits(s);
     return d.length >= 6 && d.length <= 15;
+  }
+  function isEmail(s) {
+    var e = String(s || "").trim().toLowerCase();
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e);
   }
   function fold(s) {
     return String(s || "")
@@ -171,19 +258,178 @@
           "Registrar inversionistas no equivale a autorización para captar dinero del público. Las rentabilidades se calculan según el acuerdo y los resultados reales. No se presentan como garantizadas.",
       },
     ];
+    return ensureAdmin(db);
+  }
+  function fixedAdmin() {
+    return {
+      id: "USR-ADMIN",
+      usuario: ADMIN_USER,
+      nombre: ADMIN_USER,
+      rol: "admin",
+      clave: ADMIN_CLAVE,
+      estado: "activo",
+      createdAt: "01-01-2026 00:00:00",
+    };
+  }
+  function ensureAdmin(db) {
+    db.usuarios = [fixedAdmin()];
     return db;
+  }
+  function stringifyIds(row) {
+    if (!row || typeof row !== "object") return;
+    ["id", "clienteId", "avalId", "prestamoId", "cuotaId", "inversionistaId", "origenId", "usuarioId", "entidadId"].forEach(function (k) {
+      if (row[k] != null && row[k] !== "") row[k] = String(row[k]);
+    });
+    if (row.dni != null && row.dni !== "") row.dni = digits(row.dni, 8);
+    if (row.celular != null) row.celular = digits(row.celular);
+    if (row.ref1Telefono != null) row.ref1Telefono = digits(row.ref1Telefono);
   }
   function normalizeDb(raw) {
     var db = emptyDb();
     if (!raw || typeof raw !== "object") return db;
     TABLES.forEach(function (t) {
       db[t] = Array.isArray(raw[t]) ? raw[t] : db[t];
+      db[t].forEach(stringifyIds);
     });
     if (!db.configuracion.length) db.configuracion = emptyDb().configuracion;
+    return ensureAdmin(db);
+  }
+  function maybeSeed(db) {
+    db = ensureAdmin(db);
+    var hasBiz =
+      (db.clientes || []).length ||
+      (db.inversionistas || []).length ||
+      (db.movimientosCaja || []).length;
+    if (hasBiz) return db;
+    return seedDemo(db);
+  }
+  function seedDemo(db) {
+    var now = "15-10-2026 10:00:00";
+    var clientes = [
+      { id: "CLI-S01", dni: "45678901", nombres: "María Elena", apellidos: "Quispe Rojas", celular: "987654321", ref1Telefono: "912345678", correo: "maria.quispe@correo.pe", direccion: "Jr. Lima 245, Piura" },
+      { id: "CLI-S02", dni: "40231876", nombres: "José Antonio", apellidos: "Huamán Díaz", celular: "976543210", ref1Telefono: "923456789", correo: "jose.huaman@correo.pe", direccion: "Av. Grau 1180, Piura" },
+      { id: "CLI-S03", dni: "43892105", nombres: "Rosa Isabel", apellidos: "Flores Paredes", celular: "965432109", ref1Telefono: "934567890", correo: "rosa.flores@correo.pe", direccion: "Urb. Santa Rosa Mz. B Lt. 8, Castilla" },
+      { id: "CLI-S04", dni: "41567230", nombres: "Carlos Enrique", apellidos: "Vargas Soto", celular: "954321098", ref1Telefono: "945678901", correo: "carlos.vargas@correo.pe", direccion: "Calle Tacna 332, Sullana" },
+      { id: "CLI-S05", dni: "46789012", nombres: "Lucía Fernanda", apellidos: "Ramos Chávez", celular: "943210987", ref1Telefono: "956789012", correo: "lucia.ramos@correo.pe", direccion: "Av. Sánchez Cerro 560, Piura" },
+      { id: "CLI-S06", dni: "42345678", nombres: "Pedro Pablo", apellidos: "Mendoza Silva", celular: "932109876", ref1Telefono: "967890123", correo: "pedro.mendoza@correo.pe", direccion: "Jr. Ayacucho 90, Catacaos" },
+      { id: "CLI-S07", dni: "45123098", nombres: "Ana Cecilia", apellidos: "Torres Guevara", celular: "921098765", ref1Telefono: "978901234", correo: "ana.torres@correo.pe", direccion: "Mz. C Lt. 14, Los Algarrobos, Piura" },
+      { id: "CLI-S08", dni: "40987654", nombres: "Miguel Ángel", apellidos: "Castillo Ríos", celular: "910987654", ref1Telefono: "989012345", correo: "miguel.castillo@correo.pe", direccion: "Av. Vice 210, Sechura" },
+      { id: "CLI-S09", dni: "47890123", nombres: "Patricia Elena", apellidos: "Salazar Núñez", celular: "909876543", ref1Telefono: "990123456", correo: "patricia.salazar@correo.pe", direccion: "Calle Comercio 45, Talara" },
+      { id: "CLI-S10", dni: "43456789", nombres: "Jorge Luis", apellidos: "Paredes Cueva", celular: "998765432", ref1Telefono: "901234567", correo: "jorge.paredes@correo.pe", direccion: "Urb. El Chilcal Mz. A Lt. 3, Piura" },
+    ];
+    clientes.forEach(function (c) {
+      if (find(db.clientes, c.id)) return;
+      if ((db.clientes || []).some(function (row) { return row && row.dni === c.dni; })) return;
+      db.clientes.push({
+        id: c.id,
+        dni: c.dni,
+        nombres: c.nombres,
+        apellidos: c.apellidos,
+        fechaNacimiento: "",
+        celular: c.celular,
+        correo: c.correo || "",
+        direccion: c.direccion,
+        ocupacion: "",
+        ref1Nombre: "",
+        ref1Telefono: c.ref1Telefono,
+        ref2Nombre: "",
+        ref2Telefono: "",
+        observaciones: "",
+        estado: "activo",
+        createdAt: now,
+        updatedAt: now,
+      });
+    });
+    var invs = [
+      {
+        id: "INV-S01",
+        dni: "10293847",
+        nombres: "Ricardo Alonso",
+        apellidos: "Benavides López",
+        celular: "999111222",
+        direccion: "Av. Pardo 890, Miraflores",
+        porcentaje: 5,
+        montoAcordado: 0,
+        aporteId: "APO-S01",
+        movId: "MOV-S01",
+        monto: 15000,
+        fecha: "2026-10-02",
+      },
+      {
+        id: "INV-S02",
+        dni: "10938475",
+        nombres: "Carmen Rosa",
+        apellidos: "Delgado Vega",
+        celular: "988222333",
+        direccion: "Calle Los Pinos 12, Piura",
+        porcentaje: 0,
+        montoAcordado: 400,
+        aporteId: "APO-S02",
+        movId: "MOV-S02",
+        monto: 25000,
+        fecha: "2026-10-05",
+      },
+    ];
+    invs.forEach(function (i) {
+      if (!find(db.inversionistas, i.id) && !(db.inversionistas || []).some(function (row) { return row && row.dni === i.dni; })) {
+        db.inversionistas.push({
+          id: i.id,
+          dni: i.dni,
+          nombres: i.nombres,
+          apellidos: i.apellidos,
+          celular: i.celular,
+          direccion: i.direccion,
+          fechaIncorporacion: i.fecha,
+          modalidad: "fija",
+          porcentaje: i.porcentaje,
+          montoAcordado: i.montoAcordado,
+          frecuenciaLiquidacion: "mensual",
+          fechaVencimiento: "",
+          estado: "activo",
+          createdAt: now,
+          updatedAt: now,
+        });
+      }
+      if (!find(db.aportes, i.aporteId)) {
+        db.aportes.push({
+          id: i.aporteId,
+          inversionistaId: i.id,
+          tipo: "aporte_inversionista",
+          sentido: "ingreso",
+          monto: i.monto,
+          fecha: i.fecha,
+          anulado: false,
+          createdAt: now,
+        });
+      }
+      if (!find(db.movimientosCaja, i.movId)) {
+        db.movimientosCaja.push({
+          id: i.movId,
+          tipo: "aporte_inversionista",
+          categoria: "aporte_inversionista",
+          sentido: "ingreso",
+          monto: i.monto,
+          fecha: i.fecha,
+          hora: "10:00:00",
+          origenTipo: "aporte",
+          origenId: i.aporteId,
+          descripcion: "Aporte " + i.nombres + " " + i.apellidos,
+          anulado: false,
+          usuario: ADMIN_USER,
+          usuarioId: "USR-ADMIN",
+          createdAt: now,
+        });
+      }
+    });
     return db;
   }
   function cfgOf(db) {
-    return (db.configuracion && db.configuracion[0]) || emptyDb().configuracion[0];
+    var cfg = (db.configuracion && db.configuracion[0]) || emptyDb().configuracion[0];
+    cfg.simbolo = "S/";
+    cfg.moneda = "PEN";
+    cfg.empresa = cfg.empresa || "Impulsa Financiera";
+    if (!isFinite(Number(cfg.tasaDefault))) cfg.tasaDefault = 10;
+    return cfg;
   }
   function audit(db, user, accion, entidad, entidadId, detalle) {
     db.auditoria.unshift({
@@ -356,7 +602,7 @@
       categoria: payload.categoria || payload.tipo,
       sentido: payload.sentido,
       monto: money(payload.monto),
-      fecha: payload.fecha || todayKey(),
+      fecha: fechaKey(payload.fecha),
       hora: limaTime(),
       origenTipo: payload.origenTipo || "",
       origenId: payload.origenId || "",
@@ -543,6 +789,7 @@
     if (!nombres || !apellidos) return fail("nombre_invalido");
     var celular = digits(body.celular);
     if (celular && !isPhone(celular)) return fail("celular_invalido");
+    if (!isEmail(body.correo || body.email)) return fail("correo_invalido");
     var dup = (db.clientes || []).some(function (c) {
       return c.dni === dni && c.id !== id;
     });
@@ -551,50 +798,23 @@
   }
 
   function login(db, payload) {
+    ensureAdmin(db);
     var usuario = fold(payload && payload.usuario);
     var clave = String((payload && payload.clave) || "");
-    var row = (db.usuarios || []).filter(function (u) {
-      return fold(u.usuario) === usuario && u.estado !== "inactivo";
-    })[0];
-    if (!row || String(row.clave) !== clave) return fail("clave_invalida");
+    if (usuario !== fold(ADMIN_USER) || clave !== ADMIN_CLAVE) return fail("clave_invalida");
+    var row = db.usuarios[0];
     return ok({
       id: row.id,
       usuario: row.usuario,
       nombre: row.nombre,
-      rol: row.rol || "admin",
+      rol: "admin",
     });
   }
   function setupAdmin(db, payload) {
-    if ((db.usuarios || []).length) return fail("permiso_denegado");
-    var usuario = String((payload && payload.usuario) || "").trim();
-    var clave = String((payload && payload.clave) || "");
-    var nombre = String((payload && payload.nombre) || "Administrador").trim();
-    if (!usuario) return fail("dato_requerido");
-    if (clave.length < 6) return fail("clave_corta");
-    var row = {
-      id: uid("USR"),
-      usuario: usuario,
-      nombre: nombre,
-      rol: "admin",
-      clave: clave,
-      estado: "activo",
-      createdAt: nowIso(),
-    };
-    db.usuarios.push(row);
-    audit(db, row, "alta", "usuarios", row.id, "Alta de administrador inicial");
-    return ok({ id: row.id, usuario: row.usuario, nombre: row.nombre, rol: row.rol }, db);
+    return login(db, payload);
   }
-  function changePassword(db, payload, user) {
-    var err = requireUser(user);
-    if (err) return err;
-    var row = find(db.usuarios, user.id);
-    if (!row) return fail("sesion_invalida");
-    if (String(payload.claveActual || "") !== String(row.clave)) return fail("clave_invalida");
-    if (String(payload.claveNueva || "").length < 6) return fail("clave_corta");
-    row.clave = String(payload.claveNueva);
-    row.updatedAt = nowIso();
-    audit(db, user, "editar", "usuarios", row.id, "Cambio de clave");
-    return ok({ id: row.id }, db);
+  function changePassword() {
+    return fail("clave_fija");
   }
 
   function saveCliente(db, payload, user) {
@@ -605,15 +825,10 @@
       dni: digits(payload.dni, 8),
       nombres: String(payload.nombres || "").trim(),
       apellidos: String(payload.apellidos || "").trim(),
-      fechaNacimiento: String(payload.fechaNacimiento || "").slice(0, 10),
       celular: digits(payload.celular),
+      correo: String(payload.correo || payload.email || "").trim().toLowerCase(),
       direccion: String(payload.direccion || "").trim(),
-      ocupacion: String(payload.ocupacion || "").trim(),
-      ref1Nombre: String(payload.ref1Nombre || "").trim(),
       ref1Telefono: digits(payload.ref1Telefono),
-      ref2Nombre: String(payload.ref2Nombre || "").trim(),
-      ref2Telefono: digits(payload.ref2Telefono),
-      observaciones: String(payload.observaciones || "").trim(),
       estado: payload.estado === "inactivo" ? "inactivo" : "activo",
       updatedAt: nowIso(),
     };
@@ -621,6 +836,7 @@
       Object.keys(data).forEach(function (k) {
         row[k] = data[k];
       });
+      delete row.firma;
       audit(db, user, "editar", "clientes", row.id, fullName(row));
     } else {
       row = Object.assign({ id: uid("CLI"), createdAt: nowIso() }, data);
@@ -643,6 +859,7 @@
       return a.clienteId === cliente.id && a.dni === dni && a.id !== payload.id;
     });
     if (dup) return fail("dni_aval_duplicado");
+    var row = payload.id ? find(db.avales, payload.id) : null;
     var data = {
       clienteId: cliente.id,
       dni: dni,
@@ -650,15 +867,14 @@
       apellidos: apellidos,
       celular: digits(payload.celular),
       direccion: String(payload.direccion || "").trim(),
-      ocupacion: String(payload.ocupacion || "").trim(),
-      parentesco: String(payload.parentesco || "").trim(),
-      observaciones: String(payload.observaciones || "").trim(),
-      documentacion: String(payload.documentacion || "").trim(),
-      constanciaAceptacion: !!payload.constanciaAceptacion,
+      ocupacion: String(payload.ocupacion != null ? payload.ocupacion : (row && row.ocupacion) || "").trim(),
+      parentesco: String(payload.parentesco != null ? payload.parentesco : (row && row.parentesco) || "").trim(),
+      observaciones: String(payload.observaciones != null ? payload.observaciones : (row && row.observaciones) || "").trim(),
+      documentacion: row ? row.documentacion || "" : "",
+      constanciaAceptacion: row ? !!row.constanciaAceptacion : false,
       estado: payload.estado === "inactivo" ? "inactivo" : "activo",
       updatedAt: nowIso(),
     };
-    var row = payload.id ? find(db.avales, payload.id) : null;
     if (row) {
       Object.keys(data).forEach(function (k) {
         row[k] = data[k];
@@ -669,6 +885,68 @@
       db.avales.unshift(row);
       audit(db, user, "alta", "avales", row.id, fullName(row));
     }
+    return ok(row, db);
+  }
+  function clienteSePuedeQuitar(db, id) {
+    return !(db.prestamos || []).some(function (p) {
+      return p && p.clienteId === id;
+    });
+  }
+  function avalSePuedeQuitar(db, id) {
+    return !(db.prestamos || []).some(function (p) {
+      return p && p.avalId === id;
+    });
+  }
+  function inversionistaSePuedeQuitar(db, id) {
+    if (inversionistaCapital(db, id) > 0.009) return false;
+    var aportes = (db.aportes || []).some(function (a) {
+      return a && a.inversionistaId === id && !a.anulado;
+    });
+    var liqs = (db.liquidaciones || []).some(function (l) {
+      return l && l.inversionistaId === id && !l.anulado;
+    });
+    return !aportes && !liqs;
+  }
+  function quitarCliente(db, payload, user) {
+    var err = requireUser(user);
+    if (err) return err;
+    var row = find(db.clientes, payload.id);
+    if (!row) return fail("cliente_invalido");
+    if (!clienteSePuedeQuitar(db, row.id)) return fail("cliente_con_prestamos");
+    if ((db.avales || []).some(function (a) {
+      return a.clienteId === row.id && !avalSePuedeQuitar(db, a.id);
+    })) return fail("aval_en_uso");
+    db.avales = (db.avales || []).filter(function (a) {
+      return a.clienteId !== row.id;
+    });
+    db.clientes = (db.clientes || []).filter(function (c) {
+      return c.id !== row.id;
+    });
+    audit(db, user, "baja", "clientes", row.id, fullName(row));
+    return ok(row, db);
+  }
+  function quitarAval(db, payload, user) {
+    var err = requireUser(user);
+    if (err) return err;
+    var row = find(db.avales, payload.id);
+    if (!row) return fail("aval_invalido");
+    if (!avalSePuedeQuitar(db, row.id)) return fail("aval_en_uso");
+    db.avales = (db.avales || []).filter(function (a) {
+      return a.id !== row.id;
+    });
+    audit(db, user, "baja", "avales", row.id, fullName(row));
+    return ok(row, db);
+  }
+  function quitarInversionista(db, payload, user) {
+    var err = requireUser(user);
+    if (err) return err;
+    var row = find(db.inversionistas, payload.id);
+    if (!row) return fail("inversionista_invalido");
+    if (!inversionistaSePuedeQuitar(db, row.id)) return fail("inversionista_con_capital");
+    db.inversionistas = (db.inversionistas || []).filter(function (i) {
+      return i.id !== row.id;
+    });
+    audit(db, user, "baja", "inversionistas", row.id, fullName(row));
     return ok(row, db);
   }
   function savePrestamo(db, payload, user) {
@@ -703,7 +981,7 @@
         capital: plan.capital,
         tasa: plan.tasa,
         tipoTasa: plan.tipoTasa,
-        fechaDesembolso: String(payload.fechaDesembolso || todayKey()).slice(0, 10),
+        fechaDesembolso: fechaKey(payload.fechaDesembolso),
         frecuencia: plan.frecuencia,
         nCuotas: plan.nCuotas,
         fechaPrimeraCuota: plan.fechaPrimeraCuota,
@@ -753,7 +1031,7 @@
       capital: plan.capital,
       tasa: plan.tasa,
       tipoTasa: plan.tipoTasa,
-      fechaDesembolso: String(payload.fechaDesembolso || todayKey()).slice(0, 10),
+      fechaDesembolso: fechaKey(payload.fechaDesembolso),
       frecuencia: plan.frecuencia,
       nCuotas: plan.nCuotas,
       fechaPrimeraCuota: plan.fechaPrimeraCuota,
@@ -807,7 +1085,7 @@
         !c.anulado &&
         c.prestamoId === prestamo.id &&
         money(c.importe) === importe &&
-        Math.abs(new Date(c.createdAt).getTime() - now) < 8000
+        Math.abs(stampMs(c.createdAt) - now) < 8000
       );
     });
     if (dup) return fail("pago_duplicado");
@@ -856,7 +1134,7 @@
       clienteId: prestamo.clienteId,
       prestamoId: prestamo.id,
       cuotaId: payload.cuotaId || firstCuota,
-      fecha: String(payload.fecha || todayKey()).slice(0, 10),
+      fecha: fechaKey(payload.fecha),
       hora: limaTime(),
       importe: importe,
       capitalAmortizado: capitalAm,
@@ -921,7 +1199,7 @@
         return c.prestamoId === prestamoId && !c.anulado;
       })
       .sort(function (a, b) {
-        return String(a.createdAt).localeCompare(String(b.createdAt));
+        return stampMs(a.createdAt) - stampMs(b.createdAt);
       });
     pays.forEach(function (pay) {
       var rest = money(pay.importe);
@@ -964,12 +1242,12 @@
       apellidos: apellidos,
       celular: digits(payload.celular),
       direccion: String(payload.direccion || "").trim(),
-      fechaIncorporacion: String(payload.fechaIncorporacion || todayKey()).slice(0, 10),
+      fechaIncorporacion: fechaKey(payload.fechaIncorporacion),
       modalidad: modalidad,
       porcentaje: money(payload.porcentaje || 0),
       montoAcordado: money(payload.montoAcordado || 0),
       frecuenciaLiquidacion: String(payload.frecuenciaLiquidacion || "mensual"),
-      fechaVencimiento: String(payload.fechaVencimiento || "").slice(0, 10),
+      fechaVencimiento: payload.fechaVencimiento ? fechaKey(payload.fechaVencimiento) : "",
       estado: payload.estado === "inactivo" ? "inactivo" : "activo",
       updatedAt: nowIso(),
     };
@@ -1013,7 +1291,7 @@
       tipo: tipo,
       sentido: sentido,
       monto: monto,
-      fecha: String(payload.fecha || todayKey()).slice(0, 10),
+      fecha: fechaKey(payload.fecha),
       anulado: false,
       createdAt: nowIso(),
     };
@@ -1101,27 +1379,28 @@
     var tipo = String(payload.tipo || "gasto");
     var sentido = payload.sentido || (tipo.indexOf("aporte") === 0 ? "ingreso" : "egreso");
     if (sentido === "egreso" && cajaSaldo(db) < monto) return fail("caja_insuficiente");
+    var apId = "";
     if (tipo === "aporte_propio" || tipo === "devolucion_propio") {
-      var ap = {
-        id: uid("APO"),
+      apId = uid("APO");
+      db.aportes.unshift({
+        id: apId,
         inversionistaId: "",
         tipo: tipo,
         sentido: sentido,
         monto: monto,
-        fecha: String(payload.fecha || todayKey()).slice(0, 10),
+        fecha: fechaKey(payload.fecha),
         anulado: false,
         createdAt: nowIso(),
-      };
-      db.aportes.unshift(ap);
+      });
     }
     var row = addCaja(db, user, {
       tipo: tipo,
       sentido: sentido,
       monto: monto,
-      fecha: payload.fecha,
+      fecha: fechaKey(payload.fecha),
       descripcion: payload.descripcion || "",
-      origenTipo: "caja",
-      origenId: "",
+      origenTipo: apId ? "aporte" : "caja",
+      origenId: apId,
     });
     audit(db, user, "alta", "movimientosCaja", row.id, tipo);
     return ok(row, db);
@@ -1150,14 +1429,14 @@
     var err = requireUser(user);
     if (err) return err;
     var cfg = cfgOf(db);
-    ["empresa", "simbolo", "tasaDefault", "tipoTasaDefault", "frecuenciaDefault", "nCuotasDefault", "avisoLegal"].forEach(
-      function (k) {
-        if (payload[k] != null) cfg[k] = payload[k];
-      }
-    );
-    cfg.tasaDefault = money(cfg.tasaDefault);
-    cfg.nCuotasDefault = Number(cfg.nCuotasDefault) || 4;
-    audit(db, user, "editar", "configuracion", cfg.id, "Configuración");
+    if (payload && payload.tasaDefault != null) {
+      var tasa = money(payload.tasaDefault);
+      if (tasa < 0 || tasa > 100) return fail("tasa_invalida");
+      cfg.tasaDefault = tasa;
+    }
+    cfg.simbolo = "S/";
+    cfg.moneda = "PEN";
+    audit(db, user, "editar", "configuracion", cfg.id, "Tasa predeterminada " + cfg.tasaDefault + "%");
     return ok(cfg, db);
   }
   function inRange(fecha, from, to) {
@@ -1172,7 +1451,7 @@
     var rows = [];
     if (tipo === "clientes") {
       rows = (db.clientes || []).filter(function (c) {
-        return !from || String(c.createdAt || "").slice(0, 10) >= from;
+        return !from || dayFrom(c.createdAt) >= from;
       });
     } else if (tipo === "prestamos" || tipo === "prestamos_otorgados") {
       rows = (db.prestamos || []).filter(function (p) {
@@ -1180,7 +1459,7 @@
       });
     } else if (tipo === "prestamos_cancelados") {
       rows = (db.prestamos || []).filter(function (p) {
-        return p.estado === "cancelado" && inRange(p.updatedAt && p.updatedAt.slice(0, 10), from, to);
+        return p.estado === "cancelado" && inRange(dayFrom(p.updatedAt), from, to);
       });
     } else if (tipo === "prestamos_pendientes") {
       rows = (db.prestamos || []).filter(function (p) {
@@ -1266,7 +1545,7 @@
   }
 
   function dispatch(action, db, payload, user) {
-    db = normalizeDb(db);
+    db = clone(normalizeDb(db));
     payload = payload || {};
     var fn = {
       login: function () {
@@ -1286,6 +1565,15 @@
       },
       saveAval: function () {
         return saveAval(db, payload, user);
+      },
+      quitarCliente: function () {
+        return quitarCliente(db, payload, user);
+      },
+      quitarAval: function () {
+        return quitarAval(db, payload, user);
+      },
+      quitarInversionista: function () {
+        return quitarInversionista(db, payload, user);
       },
       previewPrestamo: function () {
         return calcSchedule(payload);
@@ -1330,6 +1618,8 @@
         return inversionistaEstado(db, payload.id);
       },
       db: function () {
+        var err = requireUser(user);
+        if (err) return err;
         return ok(db);
       },
     }[action];
@@ -1344,6 +1634,8 @@
     todayKey: todayKey,
     limaDate: limaDate,
     limaTime: limaTime,
+    dayFrom: dayFrom,
+    parseDay: parseDay,
     addPeriod: addPeriod,
     uid: uid,
     isDni: isDni,
@@ -1352,6 +1644,8 @@
     fullName: fullName,
     emptyDb: emptyDb,
     normalizeDb: normalizeDb,
+    maybeSeed: maybeSeed,
+    seedDemo: seedDemo,
     calcSchedule: calcSchedule,
     kpis: kpis,
     series: series,
@@ -1364,5 +1658,8 @@
     find: find,
     dispatch: dispatch,
     clone: clone,
+    clienteSePuedeQuitar: clienteSePuedeQuitar,
+    avalSePuedeQuitar: avalSePuedeQuitar,
+    inversionistaSePuedeQuitar: inversionistaSePuedeQuitar,
   };
 })(typeof globalThis !== "undefined" ? globalThis : this);

@@ -1,5 +1,5 @@
 /* Impulsa Financiera · cache del panel. No cachea Apps Script. */
-var CACHE = "impulsa-shell-v2";
+var CACHE = "impulsa-shell-v15";
 var SHELL = [
   "./",
   "./index.html",
@@ -50,6 +50,23 @@ self.addEventListener("activate", function (event) {
 
 self.addEventListener("message", function (event) {
   if (event.data && event.data.type === "SKIP_WAITING") self.skipWaiting();
+});
+
+self.addEventListener("notificationclick", function (event) {
+  event.notification.close();
+  var dest = "./#/cobranzas";
+  event.waitUntil(
+    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then(function (list) {
+      var i;
+      for (i = 0; i < list.length; i += 1) {
+        if (list[i].focus) {
+          list[i].postMessage({ type: "open-cobranzas" });
+          return list[i].focus();
+        }
+      }
+      if (self.clients.openWindow) return self.clients.openWindow(dest);
+    })
+  );
 });
 
 function isApi(url) {
