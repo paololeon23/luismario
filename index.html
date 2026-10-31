@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Impulsa Financiera</title>
+    <link rel="icon" type="image/jpeg" href="JL.jpeg" />
+    <link rel="apple-touch-icon" href="JL.jpeg" />
+    <link rel="manifest" href="manifest.webmanifest" />
+    <meta name="theme-color" content="#092653" />
+    <meta name="impulsa-api" content="" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&display=swap" rel="stylesheet" media="print" onload="this.media='all'" />
+    <noscript><link href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&display=swap" rel="stylesheet" /></noscript>
+    <link rel="stylesheet" href="css/app.css" />
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+  </head>
+  <body>
+    <div id="backdrop" class="backdrop"></div>
+    <div id="form-modal" class="modal">
+      <div class="modal-card form-card" role="dialog" aria-modal="true" aria-labelledby="form-title">
+        <header class="modal-head">
+          <div>
+            <p class="muted" id="form-kicker">Impulsa Financiera</p>
+            <h2 id="form-title">Registro</h2>
+          </div>
+          <button type="button" id="form-close" class="icon-btn" aria-label="Cerrar">×</button>
+        </header>
+        <div id="form-body" class="form-body"></div>
+      </div>
+    </div>
+    <div id="moves-modal" class="modal">
+      <div class="modal-card moves-card" role="dialog" aria-modal="true" aria-labelledby="moves-title">
+        <header class="modal-head">
+          <div>
+            <p class="muted">Auditoría de operaciones</p>
+            <h2 id="moves-title">Movimientos</h2>
+          </div>
+          <button type="button" id="moves-close" class="icon-btn" aria-label="Cerrar">×</button>
+        </header>
+        <p class="modal-count" id="moves-count"></p>
+        <div id="moves-list" class="moves-list"></div>
+        <div id="moves-pager" class="team-pager" hidden></div>
+      </div>
+    </div>
+    <aside id="sidebar" class="sidebar">
+      <a class="brand" href="#/dashboard">
+        <img id="logo" src="JL.jpeg" alt="Impulsa Financiera" width="188" height="88" decoding="async" />
+      </a>
+      <nav id="nav" class="nav"></nav>
+      <div class="side-profile">
+        <div class="side-mark side-logo-wrap">
+          <img src="JL.jpeg" alt="Impulsa Financiera" width="72" height="72" decoding="async" />
+        </div>
+        <div class="side-user">
+          <span class="avatar">IF</span>
+          <div>
+            <strong id="side-name">Administrador</strong>
+            <small>Operaciones</small>
+          </div>
+        </div>
+      </div>
+      <div class="side-moves">
+        <div>
+          <strong>Auditoría</strong>
+          <small>Registro de operaciones</small>
+        </div>
+        <button type="button" id="moves-eye" class="side-eye" aria-label="Ver auditoría">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>
+          <span id="moves-badge" class="side-eye-count" hidden>0</span>
+        </button>
+      </div>
+    </aside>
+    <div class="shell">
+      <header class="top">
+        <button id="menu" class="icon-btn menu-btn" type="button" aria-label="Menú">☰</button>
+        <label class="search-wrap">
+          <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+          <input id="q" class="search" type="search" placeholder="Buscar DNI, nombre, código o teléfono…" />
+        </label>
+        <div class="top-actions">
+          <div class="notice">
+            <button id="notice-btn" class="icon-btn notice-btn" type="button" aria-label="Alertas de cuotas" aria-expanded="false">
+              <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 1 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10 21a2 2 0 0 0 4 0"/></svg>
+              <span id="notice-badge" class="notice-badge" hidden>0</span>
+            </button>
+            <div id="notice-panel" class="notice-panel" hidden>
+              <header class="notice-head">
+                <div>
+                  <h2>Cuotas vencidas</h2>
+                  <p class="muted" id="notice-sub"></p>
+                </div>
+              </header>
+              <div id="notice-list" class="notice-list"></div>
+            </div>
+          </div>
+          <button id="refresh-btn" class="icon-btn refresh-btn" type="button" aria-label="Actualizar datos">
+            <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.6-6.3"/><path d="M21 3v6h-6"/></svg>
+          </button>
+          <div class="hello-wrap">
+            <button type="button" class="hello" id="hello-btn" aria-haspopup="true" aria-expanded="false" aria-label="Cuenta">
+              <span class="hello-pic"><img class="avatar-pic" src="JL.jpeg" alt="" width="36" height="36" decoding="async" /></span>
+              <span class="hello-meta">
+                <strong id="hello-name">Administrador</strong>
+                <small>Operaciones</small>
+              </span>
+            </button>
+            <div id="hello-menu" class="hello-menu" hidden>
+              <p class="hello-menu-name" id="hello-menu-name">Administrador</p>
+              <button type="button" id="logout-btn">Cerrar sesión</button>
+            </div>
+          </div>
+        </div>
+      </header>
+      <div id="api-bar" class="api-bar" hidden>
+        <span class="api-bar-dot" aria-hidden="true"></span>
+        <p id="api-bar-text">Cargando datos…</p>
+        <button type="button" id="api-retry" class="tool-btn">Reintentar</button>
+      </div>
+      <p id="data-stamp" class="data-stamp" hidden></p>
+      <main id="app"></main>
+    </div>
+    <div id="toast" class="toast" hidden role="status" aria-live="polite"></div>
+    <div id="file-warn" class="sync" hidden>
+      <div class="sync-card" role="alertdialog" aria-modal="true" aria-labelledby="file-warn-title">
+        <h3 id="file-warn-title">Ábralo con Live Server</h3>
+        <p>El panel no guarda bien si lo abre con doble clic. En Cursor o VS Code use <strong>Open with Live Server</strong> y entre por <strong>http://127.0.0.1</strong>.</p>
+      </div>
+    </div>
+    <div id="sync" class="sync" hidden>
+      <div class="sync-card" role="dialog" aria-modal="true" aria-labelledby="sync-title">
+        <div class="sync-ring" id="sync-ring" aria-hidden="true"></div>
+        <h3 id="sync-title">Procesando</h3>
+        <p id="sync-text">Registrando la operación.</p>
+      </div>
+    </div>
+    <div id="swal" class="swal" hidden>
+      <div class="swal-card" role="dialog" aria-modal="true" aria-labelledby="swal-title">
+        <h3 id="swal-title"></h3>
+        <p id="swal-text"></p>
+        <div class="swal-actions">
+          <button type="button" id="swal-cancel">Cancelar</button>
+          <button type="button" id="swal-ok">Confirmar</button>
+        </div>
+      </div>
+    </div>
+    <script src="js/config.js"></script>
+    <script src="js/store.js"></script>
+    <script src="js/engine.js"></script>
+    <script src="js/api.js"></script>
+    <script src="js/report.js"></script>
+    <script src="js/app.js"></script>
+  </body>
+</html>

@@ -1,0 +1,17 @@
+{
+  "name": "Impulsa Financiera",
+  "short_name": "Impulsa",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#F5F7FA",
+  "theme_color": "#092653",
+  "lang": "es",
+  "icons": [
+    {
+      "src": "JL.jpeg",
+      "sizes": "192x192",
+      "type": "image/jpeg"
+    }
+  ]
+}
