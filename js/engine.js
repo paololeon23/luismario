@@ -10,6 +10,7 @@
     "aportes",
     "movimientosCaja",
     "liquidaciones",
+    "historialPrestamos",
     "usuarios",
     "configuracion",
     "auditoria",
@@ -187,13 +188,51 @@
     else d.setMonth(d.getMonth() + n);
     return dayKey(d);
   }
-  function uid(prefix) {
-    return (
-      (prefix || "X") +
-      "-" +
-      Date.now().toString(36).toUpperCase() +
-      Math.random().toString(36).slice(2, 6).toUpperCase()
-    );
+  var UID_SEQ = 0;
+  function idTaken(db, id) {
+    if (!db || id == null || id === "") return false;
+    var key = String(id);
+    var t;
+    for (t = 0; t < TABLES.length; t += 1) {
+      var list = db[TABLES[t]] || [];
+      var i;
+      for (i = 0; i < list.length; i += 1) {
+        if (list[i] && String(list[i].id) === key) return true;
+      }
+    }
+    return false;
+  }
+  function uid(prefix, db) {
+    UID_SEQ += 1;
+    var n = 0;
+    var id;
+    do {
+      var ymd = limaDate(new Date()).replace(/-/g, "");
+      var hms = limaHms(new Date()).replace(/:/g, "");
+      var rnd = (
+        Date.now().toString(36) +
+        Math.random().toString(36).slice(2, 8) +
+        UID_SEQ.toString(36) +
+        n.toString(36)
+      )
+        .toUpperCase()
+        .replace(/[^A-Z0-9]/g, "")
+        .slice(-8);
+      id = String(prefix || "X").toUpperCase() + "-" + ymd + "-" + hms + "-" + rnd;
+      n += 1;
+    } while (db && idTaken(db, id) && n < 12);
+    return id;
+  }
+  function asStamp(s) {
+    if (s == null || s === "") return "";
+    var str = String(s).trim();
+    var lima = str.match(/^(\d{2})-(\d{2})-(\d{4})(?:[ T](\d{2}):(\d{2})(?::(\d{2}))?)?$/);
+    if (lima && Number(lima[1]) >= 1 && Number(lima[1]) <= 31 && Number(lima[2]) >= 1 && Number(lima[2]) <= 12) {
+      return lima[1] + "-" + lima[2] + "-" + lima[3] + " " + pad(lima[4] || 0) + ":" + pad(lima[5] || 0) + ":" + pad(lima[6] || 0);
+    }
+    var ms = stampMs(str);
+    if (!ms) return limaStamp();
+    return limaStamp(new Date(ms));
   }
   function digits(s, n) {
     var d = String(s || "").replace(/\D/g, "");
@@ -207,8 +246,14 @@
     return d.length >= 6 && d.length <= 15;
   }
   function isEmail(s) {
-    var e = String(s || "").trim().toLowerCase();
+    var e = asEmail(s);
     return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e);
+  }
+  function asUpper(s) {
+    return String(s || "").replace(/\s+/g, " ").trim().toLocaleUpperCase("es-PE");
+  }
+  function asEmail(s) {
+    return String(s || "").replace(/\s+/g, "").trim().toLowerCase();
   }
   function fold(s) {
     return String(s || "")
@@ -230,9 +275,11 @@
     return { ok: true, data: data, db: db };
   }
   function find(list, id) {
+    if (id == null || id === "") return null;
+    var key = String(id);
     var i;
     for (i = 0; i < (list || []).length; i += 1) {
-      if (list[i] && list[i].id === id) return list[i];
+      if (list[i] && String(list[i].id) === key) return list[i];
     }
     return null;
   }
@@ -280,9 +327,16 @@
     ["id", "clienteId", "avalId", "prestamoId", "cuotaId", "inversionistaId", "origenId", "usuarioId", "entidadId"].forEach(function (k) {
       if (row[k] != null && row[k] !== "") row[k] = String(row[k]);
     });
+    ["createdAt", "updatedAt", "anuladoAt"].forEach(function (k) {
+      if (row[k] != null && row[k] !== "") row[k] = asStamp(row[k]);
+    });
     if (row.dni != null && row.dni !== "") row.dni = digits(row.dni, 8);
     if (row.celular != null) row.celular = digits(row.celular);
     if (row.ref1Telefono != null) row.ref1Telefono = digits(row.ref1Telefono);
+    ["nombres", "apellidos", "direccion", "parentesco", "ocupacion", "observaciones", "descripcion", "cliente"].forEach(function (k) {
+      if (row[k] != null && row[k] !== "") row[k] = asUpper(row[k]);
+    });
+    if (row.correo != null && row.correo !== "") row.correo = asEmail(row.correo);
   }
   function normalizeDb(raw) {
     var db = emptyDb();
@@ -292,7 +346,9 @@
       db[t].forEach(stringifyIds);
     });
     if (!db.configuracion.length) db.configuracion = emptyDb().configuracion;
-    return ensureAdmin(db);
+    ensureAdmin(db);
+    backfillHistorial(db);
+    return db;
   }
   function maybeSeed(db) {
     db = ensureAdmin(db);
@@ -433,7 +489,7 @@
   }
   function audit(db, user, accion, entidad, entidadId, detalle) {
     db.auditoria.unshift({
-      id: uid("AUD"),
+      id: uid("AUD", db),
       accion: accion,
       entidad: entidad,
       entidadId: entidadId || "",
@@ -448,12 +504,17 @@
   }
   function nextCode(list, prefix, field) {
     var day = todayKey().replace(/-/g, "");
-    var n = 1;
+    var used = {};
     (list || []).forEach(function (row) {
-      var code = String(row[field || "codigo"] || "");
-      if (code.indexOf(prefix + "-" + day) === 0) n += 1;
+      used[String(row[field || "codigo"] || "")] = true;
     });
-    return prefix + "-" + day + "-" + ("000" + n).slice(-3);
+    var n = 1;
+    var code;
+    do {
+      code = prefix + "-" + day + "-" + ("000" + n).slice(-3);
+      n += 1;
+    } while (used[code] && n < 1000);
+    return code;
   }
 
   function calcSchedule(input) {
@@ -573,6 +634,55 @@
         return money(a + money((c.capital || 0) - (c.capitalPagado || 0)));
       }, 0);
   }
+  function registrarCierreHistorial(db, prestamo, silent) {
+    if (!db || !prestamo || !prestamo.id) return;
+    db.historialPrestamos = db.historialPrestamos || [];
+    var pid = String(prestamo.id);
+    var i;
+    for (i = 0; i < db.historialPrestamos.length; i += 1) {
+      if (String(db.historialPrestamos[i].prestamoId) === pid) return;
+    }
+    var cli = find(db.clientes, prestamo.clienteId) || {};
+    var pagado = (db.cobranzas || []).reduce(function (a, c) {
+      if (!c || c.anulado || String(c.prestamoId) !== pid) return a;
+      return money(a + Number(c.importe || 0));
+    }, 0);
+    db.historialPrestamos.unshift({
+      id: "HIS-" + pid,
+      clienteId: String(prestamo.clienteId || ""),
+      prestamoId: pid,
+      codigo: prestamo.codigo || "",
+      dni: digits(cli.dni, 8),
+      cliente: fullName(cli),
+      capital: money(prestamo.capital),
+      totalIntereses: money(prestamo.totalIntereses),
+      totalPagado: pagado,
+      nCuotas: prestamo.nCuotas,
+      fechaDesembolso: prestamo.fechaDesembolso,
+      fechaCierre: dayFrom(prestamo.updatedAt) || todayKey(),
+      createdAt: asStamp(prestamo.updatedAt) || nowIso(),
+    });
+    if (!silent) {
+      audit(db, { id: "USR-ADMIN", nombre: "Sistema" }, "cerrar", "prestamo", prestamo.id, "Préstamo " + (prestamo.codigo || "") + " terminado. Queda en historial del cliente.");
+    }
+  }
+  function quitarCierreHistorial(db, prestamoId) {
+    if (!db) return;
+    var pid = String(prestamoId || "");
+    db.historialPrestamos = (db.historialPrestamos || []).filter(function (h) {
+      return String(h.prestamoId) !== pid;
+    });
+  }
+  function backfillHistorial(db) {
+    if (!db) return db;
+    db.historialPrestamos = db.historialPrestamos || [];
+    (db.prestamos || []).forEach(function (p) {
+      if (!p) return;
+      if (p.estado === "cancelado") registrarCierreHistorial(db, p, true);
+      else quitarCierreHistorial(db, p.id);
+    });
+    return db;
+  }
   function refreshPrestamoEstado(db, prestamo) {
     if (!prestamo || prestamo.estado === "refinanciado") return;
     var today = todayKey();
@@ -581,8 +691,11 @@
     });
     if (!pending.length) {
       prestamo.estado = "cancelado";
+      prestamo.updatedAt = nowIso();
+      registrarCierreHistorial(db, prestamo);
       return;
     }
+    quitarCierreHistorial(db, prestamo.id);
     var vencida = pending.some(function (c) {
       return String(c.fechaVencimiento || "") < today;
     });
@@ -597,7 +710,7 @@
   }
   function addCaja(db, user, payload) {
     var row = {
-      id: uid("MOV"),
+      id: uid("MOV", db),
       tipo: payload.tipo,
       categoria: payload.categoria || payload.tipo,
       sentido: payload.sentido,
@@ -606,7 +719,7 @@
       hora: limaTime(),
       origenTipo: payload.origenTipo || "",
       origenId: payload.origenId || "",
-      descripcion: payload.descripcion || "",
+      descripcion: asUpper(payload.descripcion || ""),
       anulado: false,
       usuario: (user && (user.nombre || user.usuario)) || "",
       usuarioId: (user && user.id) || "",
@@ -784,8 +897,8 @@
   function validateCliente(body, db, id) {
     var dni = digits(body.dni, 8);
     if (!isDni(dni)) return fail("dni_invalido");
-    var nombres = String(body.nombres || "").replace(/\s+/g, " ").trim();
-    var apellidos = String(body.apellidos || "").replace(/\s+/g, " ").trim();
+    var nombres = asUpper(body.nombres);
+    var apellidos = asUpper(body.apellidos);
     if (!nombres || !apellidos) return fail("nombre_invalido");
     var celular = digits(body.celular);
     if (celular && !isPhone(celular)) return fail("celular_invalido");
@@ -823,11 +936,11 @@
     var row = payload.id ? find(db.clientes, payload.id) : null;
     var data = {
       dni: digits(payload.dni, 8),
-      nombres: String(payload.nombres || "").trim(),
-      apellidos: String(payload.apellidos || "").trim(),
+      nombres: asUpper(payload.nombres),
+      apellidos: asUpper(payload.apellidos),
       celular: digits(payload.celular),
-      correo: String(payload.correo || payload.email || "").trim().toLowerCase(),
-      direccion: String(payload.direccion || "").trim(),
+      correo: asEmail(payload.correo || payload.email),
+      direccion: asUpper(payload.direccion),
       ref1Telefono: digits(payload.ref1Telefono),
       estado: payload.estado === "inactivo" ? "inactivo" : "activo",
       updatedAt: nowIso(),
@@ -839,7 +952,7 @@
       delete row.firma;
       audit(db, user, "editar", "clientes", row.id, fullName(row));
     } else {
-      row = Object.assign({ id: uid("CLI"), createdAt: nowIso() }, data);
+      row = Object.assign({ id: uid("CLI", db), createdAt: nowIso() }, data);
       db.clientes.unshift(row);
       audit(db, user, "alta", "clientes", row.id, fullName(row));
     }
@@ -852,8 +965,8 @@
     if (!cliente) return fail("cliente_invalido");
     var dni = digits(payload.dni, 8);
     if (!isDni(dni)) return fail("dni_invalido");
-    var nombres = String(payload.nombres || "").trim();
-    var apellidos = String(payload.apellidos || "").trim();
+    var nombres = asUpper(payload.nombres);
+    var apellidos = asUpper(payload.apellidos);
     if (!nombres || !apellidos) return fail("nombre_invalido");
     var dup = (db.avales || []).some(function (a) {
       return a.clienteId === cliente.id && a.dni === dni && a.id !== payload.id;
@@ -866,10 +979,10 @@
       nombres: nombres,
       apellidos: apellidos,
       celular: digits(payload.celular),
-      direccion: String(payload.direccion || "").trim(),
-      ocupacion: String(payload.ocupacion != null ? payload.ocupacion : (row && row.ocupacion) || "").trim(),
-      parentesco: String(payload.parentesco != null ? payload.parentesco : (row && row.parentesco) || "").trim(),
-      observaciones: String(payload.observaciones != null ? payload.observaciones : (row && row.observaciones) || "").trim(),
+      direccion: asUpper(payload.direccion),
+      ocupacion: asUpper(payload.ocupacion != null ? payload.ocupacion : (row && row.ocupacion) || ""),
+      parentesco: asUpper(payload.parentesco != null ? payload.parentesco : (row && row.parentesco) || ""),
+      observaciones: asUpper(payload.observaciones != null ? payload.observaciones : (row && row.observaciones) || ""),
       documentacion: row ? row.documentacion || "" : "",
       constanciaAceptacion: row ? !!row.constanciaAceptacion : false,
       estado: payload.estado === "inactivo" ? "inactivo" : "activo",
@@ -881,7 +994,7 @@
       });
       audit(db, user, "editar", "avales", row.id, fullName(row));
     } else {
-      row = Object.assign({ id: uid("AVL"), createdAt: nowIso() }, data);
+      row = Object.assign({ id: uid("AVL", db), createdAt: nowIso() }, data);
       db.avales.unshift(row);
       audit(db, user, "alta", "avales", row.id, fullName(row));
     }
@@ -994,7 +1107,7 @@
       if (cajaSaldo(db) < plan.capital) return fail("caja_insuficiente");
       plan.cuotas.forEach(function (c) {
         db.cuotas.push({
-          id: uid("CUO"),
+          id: uid("CUO", db),
           prestamoId: old.id,
           nro: c.nro,
           fechaVencimiento: c.fechaVencimiento,
@@ -1024,7 +1137,7 @@
     if (cajaSaldo(db) < plan.capital) return fail("caja_insuficiente");
     var codigo = nextCode(db.prestamos, "PRE");
     var row = {
-      id: uid("PRE"),
+      id: uid("PRE", db),
       codigo: codigo,
       clienteId: cliente.id,
       avalId: payload.avalId || "",
@@ -1045,7 +1158,7 @@
     db.prestamos.unshift(row);
     plan.cuotas.forEach(function (c) {
       db.cuotas.push({
-        id: uid("CUO"),
+        id: uid("CUO", db),
         prestamoId: row.id,
         nro: c.nro,
         fechaVencimiento: c.fechaVencimiento,
@@ -1129,7 +1242,7 @@
     });
     var codigo = nextCode(db.cobranzas, "COB");
     var cob = {
-      id: uid("COB"),
+      id: uid("COB", db),
       codigo: codigo,
       clienteId: prestamo.clienteId,
       prestamoId: prestamo.id,
@@ -1228,8 +1341,8 @@
     if (err) return err;
     var dni = digits(payload.dni, 8);
     if (!isDni(dni)) return fail("dni_invalido");
-    var nombres = String(payload.nombres || "").trim();
-    var apellidos = String(payload.apellidos || "").trim();
+    var nombres = asUpper(payload.nombres);
+    var apellidos = asUpper(payload.apellidos);
     if (!nombres || !apellidos) return fail("nombre_invalido");
     var dup = (db.inversionistas || []).some(function (i) {
       return i.dni === dni && i.id !== payload.id;
@@ -1241,7 +1354,7 @@
       nombres: nombres,
       apellidos: apellidos,
       celular: digits(payload.celular),
-      direccion: String(payload.direccion || "").trim(),
+      direccion: asUpper(payload.direccion),
       fechaIncorporacion: fechaKey(payload.fechaIncorporacion),
       modalidad: modalidad,
       porcentaje: money(payload.porcentaje || 0),
@@ -1259,7 +1372,7 @@
       audit(db, user, "editar", "inversionistas", row.id, fullName(row));
       return ok(row, db);
     }
-    row = Object.assign({ id: uid("INV"), createdAt: nowIso() }, data);
+    row = Object.assign({ id: uid("INV", db), createdAt: nowIso() }, data);
     db.inversionistas.unshift(row);
     var monto = money(payload.montoAportado || payload.monto || 0);
     if (monto > 0) {
@@ -1286,7 +1399,7 @@
       if (cajaSaldo(db) < monto) return fail("caja_insuficiente");
     }
     var row = {
-      id: uid("APO"),
+      id: uid("APO", db),
       inversionistaId: inv.id,
       tipo: tipo,
       sentido: sentido,
@@ -1337,7 +1450,7 @@
     var monto = money(payload.monto != null ? payload.monto : calcularGanancia(db, inv));
     if (!(monto > 0)) return fail("importe_invalido");
     var row = {
-      id: uid("LIQ"),
+      id: uid("LIQ", db),
       inversionistaId: inv.id,
       fecha: todayKey(),
       monto: monto,
@@ -1381,7 +1494,7 @@
     if (sentido === "egreso" && cajaSaldo(db) < monto) return fail("caja_insuficiente");
     var apId = "";
     if (tipo === "aporte_propio" || tipo === "devolucion_propio") {
-      apId = uid("APO");
+      apId = uid("APO", db);
       db.aportes.unshift({
         id: apId,
         inversionistaId: "",
@@ -1398,7 +1511,7 @@
       sentido: sentido,
       monto: monto,
       fecha: fechaKey(payload.fecha),
-      descripcion: payload.descripcion || "",
+      descripcion: asUpper(payload.descripcion || ""),
       origenTipo: apId ? "aporte" : "caja",
       origenId: apId,
     });
@@ -1502,17 +1615,27 @@
     var cli = find(db.clientes, id);
     if (!cli) return fail("cliente_invalido");
     var prestamos = db.prestamos.filter(function (p) {
-      return p.clienteId === id;
+      return String(p.clienteId) === String(id);
     });
     var ids = prestamos.map(function (p) {
       return p.id;
     });
+    var historial = (db.historialPrestamos || []).filter(function (h) {
+      return String(h.clienteId) === String(id);
+    });
     return ok({
       cliente: cli,
       avales: db.avales.filter(function (a) {
-        return a.clienteId === id;
+        return String(a.clienteId) === String(id);
       }),
       prestamos: prestamos,
+      prestamosActivos: prestamos.filter(function (p) {
+        return p.estado !== "cancelado";
+      }),
+      prestamosTerminados: prestamos.filter(function (p) {
+        return p.estado === "cancelado";
+      }),
+      historial: historial,
       cobranzas: db.cobranzas.filter(function (c) {
         return ids.indexOf(c.prestamoId) >= 0;
       }),

@@ -32,6 +32,22 @@
     if (err.name === "AbortError") return "La consulta tardó demasiado. Intente nuevamente.";
     return "No se pudo completar la operación.";
   }
+  function isBusy(err) {
+    if (!err) return false;
+    var code = String(err.error || err.status || "");
+    var msg = String(err.message || "");
+    return (
+      code === "lock_timeout" ||
+      code === "408" ||
+      code === "429" ||
+      /ocupado|tardó demasiado|timeout|AbortError/i.test(code + " " + msg)
+    );
+  }
+  function wait(ms) {
+    return new Promise(function (resolve) {
+      root.setTimeout(resolve, ms);
+    });
+  }
   function locked(fn) {
     var run = chain.then(fn, fn);
     chain = run.then(
@@ -144,57 +160,84 @@
       return localDb;
     });
   }
-  function callRemote(action, payload, user) {
+  function callRemote(action, payload, user, tries) {
+    tries = tries == null ? 3 : tries;
     return request({
       method: "POST",
       url: apiUrl(),
       body: { action: action, payload: payload || {}, session: user || null },
       fresh: true,
       retry: false,
-      timeout: cfg().timeoutMs || 25000,
-    }).then(function (data) {
-      if (data && data.ok === false) {
-        throw {
-          status: 422,
-          error: data.error,
-          message: data.message || (root.ImpulsaEngine && root.ImpulsaEngine.MSG[data.error]) || "No se pudo completar.",
-        };
-      }
-      return data;
-    });
+      timeout: cfg().timeoutMs || 30000,
+    })
+      .then(function (data) {
+        if (data && data.ok === false) {
+          var err = {
+            status: 422,
+            error: data.error,
+            message: data.message || (root.ImpulsaEngine && root.ImpulsaEngine.MSG[data.error]) || "No se pudo completar.",
+          };
+          throw err;
+        }
+        return data;
+      })
+      .catch(function (err) {
+        if (tries > 1 && isBusy(err)) {
+          return wait(700 * (4 - tries)).then(function () {
+            return callRemote(action, payload, user, tries - 1);
+          });
+        }
+        throw err;
+      });
   }
   function sync(user) {
     if (!usesRemote() || !user || !user.id) return loadLocal();
-    return callRemote("db", {}, user).then(function (res) {
-      return cacheDump(res && res.data);
-    });
+    return callRemote("db", {}, user)
+      .then(function (res) {
+        return cacheDump(res && (res.db || res.data));
+      })
+      .catch(function (err) {
+        if (isBusy(err) || err.offline) return loadLocal();
+        throw err;
+      });
   }
   function call(action, payload, user) {
+    var key = "CALL:" + action + ":" + JSON.stringify(payload || {}) + ":" + ((user && user.id) || "");
+    if (inflight[key]) return inflight[key];
+    var work;
     if (usesRemote()) {
-      return callRemote(action, payload, user).then(function (data) {
-        var nextUser = user;
-        if ((action === "login" || action === "setupAdmin") && data && data.data && data.data.id) {
-          nextUser = data.data;
-        }
-        if (data && data.db) {
-          return cacheDump(data.db).then(function () {
-            return data;
-          });
-        }
-        if (action === "db") {
-          return cacheDump(data && data.data).then(function () {
-            return data;
-          });
-        }
-        if (nextUser && nextUser.id) {
-          return sync(nextUser).then(function () {
-            return data;
-          });
-        }
-        return data;
+      work = locked(function () {
+        return callRemote(action, payload, user).then(function (data) {
+          var nextUser = user;
+          if ((action === "login" || action === "setupAdmin") && data && data.data && data.data.id) {
+            nextUser = data.data;
+          }
+          if (data && data.db) {
+            return cacheDump(data.db).then(function () {
+              return data;
+            });
+          }
+          if (action === "db") {
+            return cacheDump(data && data.data).then(function () {
+              return data;
+            });
+          }
+          if (nextUser && nextUser.id) {
+            return sync(nextUser).then(function () {
+              return data;
+            });
+          }
+          return data;
+        });
       });
+    } else {
+      work = runLocal(action, payload, user);
     }
-    return runLocal(action, payload, user);
+    var done = work.finally(function () {
+      delete inflight[key];
+    });
+    inflight[key] = done;
+    return done;
   }
 
   root.ImpulsaApi = {
@@ -211,6 +254,7 @@
       localDb = db;
     },
     friendlyError: friendlyError,
+    isBusy: isBusy,
     clearCache: function () {
       cache = {};
     },

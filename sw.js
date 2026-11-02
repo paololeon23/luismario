@@ -1,5 +1,5 @@
 /* Impulsa Financiera · cache del panel. No cachea Apps Script. */
-var CACHE = "impulsa-shell-v15";
+var CACHE = "impulsa-shell-v19";
 var SHELL = [
   "./",
   "./index.html",

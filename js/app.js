@@ -62,10 +62,89 @@
   function person(row) {
     return E.fullName(row) || "—";
   }
-  function matchQ(row, q) {
+  function showMail(s) {
+    var v = String(s || "").trim();
+    return v ? v.toUpperCase() : "—";
+  }
+  function hitsQ(q, blob) {
     if (!q) return true;
-    var blob = JSON.stringify(row || {}).toLowerCase();
-    return blob.indexOf(q) !== -1;
+    return foldQ(blob).indexOf(q) !== -1;
+  }
+  function matchQ(row, q) {
+    return hitsQ(q, searchBlob(row));
+  }
+  function searchBlob(row) {
+    if (!row) return "";
+    var parts = [JSON.stringify(row)];
+    if (row.clienteId) parts.push(clienteSearchBlob(clienteOf(row.clienteId)));
+    if (row.prestamoId) parts.push(prestamoSearchBlob(E.find(db.prestamos, row.prestamoId)));
+    if (row.avalId) parts.push(avalSearchBlob(avalOf(row.avalId)));
+    if (row.cuotaId) {
+      var cu = E.find(db.cuotas, row.cuotaId);
+      if (cu) parts.push(prestamoSearchBlob(E.find(db.prestamos, cu.prestamoId)));
+    }
+    if (row.inversionistaId) parts.push(invSearchBlob(invOf(row.inversionistaId)));
+    if (row.origenId) {
+      var cobOrigen = E.find(db.cobranzas, row.origenId);
+      if (cobOrigen) {
+        parts.push(cobOrigen.codigo, prestamoSearchBlob(E.find(db.prestamos, cobOrigen.prestamoId)), clienteSearchBlob(clienteOf(cobOrigen.clienteId)));
+      }
+      parts.push(prestamoSearchBlob(E.find(db.prestamos, row.origenId)));
+    }
+    return parts.join(" ");
+  }
+  function clienteSearchBlob(c) {
+    if (!c || !c.id) return "";
+    var av = (db.avales || []).filter(function (a) {
+      return String(a.clienteId) === String(c.id);
+    });
+    var pre = (db.prestamos || []).filter(function (p) {
+      return String(p.clienteId) === String(c.id);
+    });
+    var cob = (db.cobranzas || []).filter(function (x) {
+      return String(x.clienteId) === String(c.id);
+    });
+    return [
+      c.dni,
+      c.nombres,
+      c.apellidos,
+      c.celular,
+      c.ref1Telefono,
+      c.correo,
+      av.map(function (a) {
+        return [a.dni, a.nombres, a.apellidos].join(" ");
+      }).join(" "),
+      pre.map(function (p) {
+        return p.codigo;
+      }).join(" "),
+      cob.map(function (x) {
+        return x.codigo;
+      }).join(" "),
+    ].join(" ");
+  }
+  function avalSearchBlob(a) {
+    if (!a || !a.id) return "";
+    var cli = clienteOf(a.clienteId);
+    var pre = (db.prestamos || []).filter(function (p) {
+      return String(p.avalId) === String(a.id) || String(p.clienteId) === String(a.clienteId);
+    });
+    return [a.dni, a.nombres, a.apellidos, a.celular, a.direccion, a.parentesco, cli.dni, cli.nombres, cli.apellidos]
+      .concat(
+        pre.map(function (p) {
+          return p.codigo;
+        })
+      )
+      .join(" ");
+  }
+  function prestamoSearchBlob(p) {
+    if (!p || !p.id) return "";
+    var cli = clienteOf(p.clienteId);
+    var av = avalOf(p.avalId);
+    return [p.codigo, p.id, p.estado, cli.dni, cli.nombres, cli.apellidos, av && av.dni, av && av.nombres, av && av.apellidos].join(" ");
+  }
+  function invSearchBlob(i) {
+    if (!i || !i.id) return "";
+    return [i.dni, i.nombres, i.apellidos, i.celular, i.direccion].join(" ");
   }
   function icon(name) {
     var p = {
@@ -355,6 +434,15 @@
   }
   function field(name, label, type, value, extra) {
     extra = extra || {};
+    var isMail = name === "correo" || type === "email";
+    var cap =
+      isMail || type === "text" || type === "textarea" || !type
+        ? ' autocapitalize="characters" spellcheck="false"'
+        : "";
+    if (isMail) value = String(value == null ? "" : value).toUpperCase();
+    else if ((type === "text" || type === "textarea" || !type) && name !== "dni") {
+      value = String(value == null ? "" : value).toLocaleUpperCase("es-PE");
+    }
     var req = extra.required ? " required" : "";
     if (type === "select") {
       var opts = (extra.options || [])
@@ -383,7 +471,9 @@
         esc(label) +
         "</span><textarea name=\"" +
         esc(name) +
-        '" rows="3">' +
+        '"' +
+        cap +
+        ' rows="3">' +
         esc(value || "") +
         "</textarea></label>"
       );
@@ -415,6 +505,7 @@
       (extra.placeholder ? ' placeholder="' + esc(extra.placeholder) + '"' : "") +
       (extra.step ? ' step="' + extra.step + '"' : "") +
       (extra.min != null ? ' min="' + extra.min + '"' : "") +
+      cap +
       " /></label>"
     );
   }
@@ -583,15 +674,22 @@
     );
   }
 
+  function isBusy(err) {
+    return !!(root.ImpulsaApi && root.ImpulsaApi.isBusy && root.ImpulsaApi.isBusy(err));
+  }
   function reload() {
     return root.ImpulsaApi.sync(session).then(function (pack) {
       db = pack;
       paintApiBar(null);
       return db;
     }).catch(function (err) {
-      paintApiBar(err);
       return root.ImpulsaApi.loadLocal().then(function (pack) {
-        db = pack;
+        if (pack) db = pack;
+        if (isBusy(err) || (err && err.offline)) {
+          paintApiBar(null);
+          return db;
+        }
+        paintApiBar(err);
         throw err;
       });
     });
@@ -599,11 +697,7 @@
   function paintApiBar(err) {
     var bar = $("api-bar");
     if (!bar) return;
-    if (!root.ImpulsaApi.usesRemote()) {
-      bar.hidden = true;
-      return;
-    }
-    if (!err) {
+    if (!root.ImpulsaApi.usesRemote() || !err || isBusy(err)) {
       bar.hidden = true;
       return;
     }
@@ -611,18 +705,34 @@
     var text = $("api-bar-text");
     if (text) text.textContent = (err && err.message) || "No se pudo sincronizar con Code.gs.";
   }
+  var runBusy = {};
   function run(action, payload) {
-    return root.ImpulsaApi.call(action, payload, session).then(function (res) {
-      if ((action === "login" || action === "setupAdmin") && res && res.data && res.data.id) {
-        session = res.data;
-      }
-      if (res && res.db) db = res.db;
-      else if (root.ImpulsaApi.cacheDb()) db = root.ImpulsaApi.cacheDb();
-      paintApiBar(null);
-      return res;
-    });
+    var key = action + ":" + JSON.stringify(payload || {});
+    if (runBusy[key]) return runBusy[key];
+    runBusy[key] = root.ImpulsaApi.call(action, payload, session)
+      .then(function (res) {
+        if ((action === "login" || action === "setupAdmin") && res && res.data && res.data.id) {
+          session = res.data;
+        }
+        if (res && res.db) db = res.db;
+        else if (root.ImpulsaApi.cacheDb()) db = root.ImpulsaApi.cacheDb();
+        paintApiBar(null);
+        return res;
+      })
+      .catch(function (err) {
+        if (isBusy(err) && root.ImpulsaApi.cacheDb()) db = root.ImpulsaApi.cacheDb();
+        throw err;
+      })
+      .finally(function () {
+        delete runBusy[key];
+      });
+    return runBusy[key];
   }
   function actErr(err) {
+    if (isBusy(err)) {
+      toast("Se mantienen los datos actuales. Intente otra vez en un momento.");
+      return;
+    }
     swalErr((err && err.message) || "No se pudo completar.");
   }
 
@@ -751,6 +861,15 @@
     if (iso) return iso[3] + "-" + iso[2];
     var pe = str.match(/^(\d{2})-(\d{2})-(\d{4})/);
     if (pe) return pe[1] + "-" + pe[2];
+    return str;
+  }
+  function fmtStamp(s) {
+    var str = String(s || "").trim();
+    if (!str) return "—";
+    var pe = str.match(/^(\d{2})-(\d{2})-(\d{4})(?:[ T](\d{2}):(\d{2})(?::(\d{2}))?)?/);
+    if (pe) return pe[1] + "-" + pe[2] + "-" + pe[3] + (pe[4] ? " " + pe[4] + ":" + pe[5] : "");
+    var iso = str.match(/^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2}))?/);
+    if (iso) return iso[3] + "-" + iso[2] + "-" + iso[1] + (iso[4] ? " " + iso[4] + ":" + iso[5] : "");
     return str;
   }
   function fmtWhen(fecha, hora) {
@@ -984,6 +1103,7 @@
     );
   }
   function renderDashboard() {
+    if (ui.q) return renderBusqueda(ui.q);
     var s = E.kpis(db);
     var weeks = dashWeekSeries();
     var hoy = today();
@@ -1124,11 +1244,91 @@
     );
   }
 
+  function renderBusqueda(q) {
+    var clientes = byName((db.clientes || []).filter(function (c) { return hitsQ(q, clienteSearchBlob(c)); }));
+    var avales = byName((db.avales || []).filter(function (a) { return hitsQ(q, avalSearchBlob(a)); }));
+    var prestamos = byDate((db.prestamos || []).filter(function (p) { return hitsQ(q, prestamoSearchBlob(p)); }), "fechaDesembolso");
+    var cobranzas = byDate((db.cobranzas || []).filter(function (c) { return hitsQ(q, searchBlob(c)); }), "fecha");
+    var total = clientes.length + avales.length + prestamos.length + cobranzas.length;
+    return (
+      pageHead("Búsqueda", "Resultados", "DNI de cliente, DNI de aval u operación en todo el sistema.") +
+      (total
+        ? ""
+        : empty("No hay coincidencias para esa búsqueda.")) +
+      (clientes.length
+        ? "<h3>Clientes</h3>" +
+          table(
+            [
+              { key: "dni", label: "DNI" },
+              { key: "who", label: "Cliente" },
+              { key: "act", label: "", html: true },
+            ],
+            clientes.slice(0, 8).map(function (c) {
+              return {
+                dni: c.dni,
+                who: person(c),
+                act: '<button type="button" class="tool-btn" data-act="cliente-hist" data-id="' + esc(c.id) + '">Historial</button>',
+              };
+            })
+          )
+        : "") +
+      (avales.length
+        ? "<h3>Avales</h3>" +
+          table(
+            [
+              { key: "dni", label: "DNI" },
+              { key: "who", label: "Aval" },
+              { key: "cli", label: "Cliente" },
+            ],
+            avales.slice(0, 8).map(function (a) {
+              return { dni: a.dni, who: person(a), cli: person(clienteOf(a.clienteId)) };
+            })
+          )
+        : "") +
+      (prestamos.length
+        ? "<h3>Préstamos</h3>" +
+          table(
+            [
+              { key: "codigo", label: "Operación" },
+              { key: "cli", label: "Cliente" },
+              { key: "saldo", label: "Saldo" },
+              { key: "act", label: "", html: true },
+            ],
+            prestamos.slice(0, 8).map(function (p) {
+              return {
+                codigo: p.codigo,
+                cli: person(clienteOf(p.clienteId)),
+                saldo: sol(E.prestamoSaldo(db, p.id)),
+                act: '<button type="button" class="tool-btn" data-act="prestamo-ver" data-id="' + esc(p.id) + '">Cronograma</button>',
+              };
+            })
+          )
+        : "") +
+      (cobranzas.length
+        ? "<h3>Cobranzas</h3>" +
+          table(
+            [
+              { key: "codigo", label: "Operación" },
+              { key: "cli", label: "Cliente" },
+              { key: "importe", label: "Importe" },
+              { key: "act", label: "", html: true },
+            ],
+            cobranzas.slice(0, 8).map(function (c) {
+              return {
+                codigo: c.codigo,
+                cli: person(clienteOf(c.clienteId)),
+                importe: sol(c.importe),
+                act: '<button type="button" class="tool-btn" data-act="pago-ver" data-id="' + esc(c.id) + '">Comprobante</button>',
+              };
+            })
+          )
+        : "")
+    );
+  }
   function renderClientes(q) {
     var list = byName(
       (db.clientes || []).filter(function (c) {
-        var blob = [c.dni, c.nombres, c.apellidos, c.celular, c.ref1Telefono, c.correo].join(" ").toLowerCase();
-        return !q || blob.indexOf(q) !== -1;
+        return hitsQ(q, clienteSearchBlob(c));
       })
     );
     var rows = slice(list).map(function (c) {
@@ -1144,7 +1344,7 @@
           "</small></div>",
         tel1: c.celular || "—",
         tel2: c.ref1Telefono || "—",
-        correo: c.correo || "—",
+        correo: showMail(c.correo),
         prestamos: n,
         act:
           '<div class="if-acts"><button type="button" class="tool-btn" data-act="cliente-edit" data-id="' +
@@ -1181,7 +1381,7 @@
   function renderAvales(q) {
     var list = byName(
       (db.avales || []).filter(function (a) {
-        return matchQ(a, q) || person(clienteOf(a.clienteId)).toLowerCase().indexOf(q) !== -1;
+        return hitsQ(q, avalSearchBlob(a));
       })
     );
     var rows = slice(list).map(function (a) {
@@ -1225,9 +1425,7 @@
   function renderPrestamos(q) {
     var list = byDate(
       (db.prestamos || []).filter(function (p) {
-        var cli = clienteOf(p.clienteId);
-        var blob = [p.codigo, person(cli), cli.dni].join(" ").toLowerCase();
-        return !q || blob.indexOf(q) !== -1;
+        return hitsQ(q, prestamoSearchBlob(p));
       }),
       "fechaDesembolso"
     );
@@ -1269,11 +1467,8 @@
   function renderCobranzas(q) {
     var list = byDate(
       (db.cobranzas || []).filter(function (c) {
-        if (c.anulado) return q === "anulado";
-        var cli = clienteOf(c.clienteId);
-        var p = E.find(db.prestamos, c.prestamoId) || {};
-        var blob = [c.codigo, person(cli), p.codigo, c.fecha].join(" ").toLowerCase();
-        return !q || blob.indexOf(q) !== -1;
+        if (c.anulado && !q) return false;
+        return hitsQ(q, searchBlob(c));
       }),
       "fecha"
     );
@@ -1326,7 +1521,7 @@
     var q = ui.q;
     var filtered = byDate(
       list.filter(function (m) {
-        return !q || matchQ(m, q);
+        return hitsQ(q, searchBlob(m));
       }),
       "fecha"
     );
@@ -1388,7 +1583,7 @@
   function renderInversionistas(q) {
     var list = byName(
       (db.inversionistas || []).filter(function (i) {
-        return !q || matchQ(i, q);
+        return hitsQ(q, invSearchBlob(i));
       })
     );
     var rows = slice(list).map(function (i) {
@@ -1442,6 +1637,11 @@
     var to = ui.to || "";
     var res = E.dispatch("reporte", db, { tipo: tipo, from: from, to: to });
     var rows = (res.data && res.data.rows) || [];
+    if (ui.q) {
+      rows = rows.filter(function (r) {
+        return hitsQ(ui.q, searchBlob(r));
+      });
+    }
     var colsMap = {
       clientes: [
         { key: "dni", label: "DNI" },
@@ -1530,6 +1730,7 @@
         if (c.key === "tasa" && v != null && v !== "") o[c.key] = Number(v).toLocaleString("es-PE") + " %";
         else if (moneyKeys[c.key] && v != null && v !== "") o[c.key] = sol(v);
         else if (c.key === "fecha" || c.key === "fechaDesembolso" || c.key === "fechaVencimiento") o[c.key] = fmtDate(v);
+        else if (c.key === "correo") o[c.key] = showMail(v);
         else o[c.key] = v == null ? "" : v;
       });
       return o;
@@ -1998,15 +2199,29 @@
     var res = E.dispatch("clienteHistorial", db, { id: id });
     if (!res.ok) return swalErr(res.message);
     var h = res.data;
+    var vigentes = h.prestamosActivos || (h.prestamos || []).filter(function (p) {
+      return p.estado !== "cancelado";
+    });
+    var cerrados = h.historial && h.historial.length
+      ? h.historial
+      : (h.prestamosTerminados || []).map(function (p) {
+          return {
+            codigo: p.codigo,
+            capital: p.capital,
+            totalPagado: p.totalDevolver,
+            fechaCierre: p.updatedAt,
+            nCuotas: p.nCuotas,
+          };
+        });
     openModal("Historial del cliente", person(h.cliente),
       '<div class="if-hist"><p class="muted">DNI ' +
         esc(h.cliente.dni) +
         " · " +
         esc(h.cliente.celular || "sin celular") +
         " · " +
-        esc(h.cliente.correo || "sin correo") +
+        esc(h.cliente.correo ? String(h.cliente.correo).toUpperCase() : "sin correo") +
         "</p>" +
-        "<h3>Préstamos</h3>" +
+        "<h3>Préstamos vigentes</h3>" +
         table(
           [
             { key: "codigo", label: "Código" },
@@ -2014,8 +2229,25 @@
             { key: "estado", label: "Estado", html: true },
             { key: "saldo", label: "Saldo" },
           ],
-          h.prestamos.map(function (p) {
+          vigentes.map(function (p) {
             return { codigo: p.codigo, capital: sol(p.capital), estado: badge(p.estado), saldo: sol(E.prestamoSaldo(db, p.id)) };
+          })
+        ) +
+        "<h3>Préstamos terminados</h3>" +
+        table(
+          [
+            { key: "codigo", label: "Código" },
+            { key: "capital", label: "Capital" },
+            { key: "pagado", label: "Pagado" },
+            { key: "cierre", label: "Cierre" },
+          ],
+          cerrados.map(function (p) {
+            return {
+              codigo: p.codigo,
+              capital: sol(p.capital),
+              pagado: sol(p.totalPagado != null ? p.totalPagado : p.totalDevolver),
+              cierre: fmtStamp(p.fechaCierre || p.updatedAt || p.createdAt),
+            };
           })
         ) +
         "<h3>Avales</h3>" +
@@ -2084,15 +2316,13 @@
       '<div class="if-recibo"><img src="JL.jpeg" alt="Impulsa Financiera" /><p><strong>' +
         esc(person(cli)) +
         "</strong></p>" +
-        (cli.correo ? "<p>" + esc(cli.correo) + "</p>" : "") +
+        (cli.correo ? "<p>" + esc(String(cli.correo).toUpperCase()) + "</p>" : "") +
         "<p>Préstamo " +
         esc(p.codigo || "") +
-        "</p><div class=\"if-plan-kpis\"><div><span>Número de cuota</span><b>" +
+        "</p><div class=\"if-plan-kpis if-plan-kpis-2\"><div><span>Número de cuota</span><b>" +
         esc(nroCuota) +
         "</b></div><div><span>Monto que se pagó</span><b>" +
         esc(sol(c.importe)) +
-        "</b></div><div><span>Saldo pendiente</span><b>" +
-        esc(sol(c.saldoPendiente)) +
         "</b></div></div><p class=\"if-letras\">Son: " +
         esc(numeroEnLetras(c.importe)) +
         "</p><p class=\"muted\">" +
@@ -2161,6 +2391,7 @@
   }
 
   function handleSubmit(form) {
+    if (!form || form.getAttribute("data-busy") === "1") return;
     var kind = form.getAttribute("data-kind");
     var data = formVal(form);
     if (form.id) data.id = form.getAttribute("data-id") || "";
@@ -2173,6 +2404,7 @@
       inv: "saveInversionista",
     }[kind];
     if (!action) return;
+    form.setAttribute("data-busy", "1");
     var btn = form.querySelector('[type="submit"]');
     if (btn) btn.disabled = true;
     run(action, data)
@@ -2194,6 +2426,7 @@
       })
       .catch(actErr)
       .then(function () {
+        form.removeAttribute("data-busy");
         if (btn) btn.disabled = false;
       });
   }
@@ -2229,7 +2462,7 @@
         { key: "direccion", label: "Dirección", width: 28 },
       ];
       rows = raw.map(function (c) {
-        return { dni: c.dni, apellidos: c.apellidos, nombres: c.nombres, celular: c.celular || "", tel2: c.ref1Telefono || "", correo: c.correo || "", direccion: c.direccion || "" };
+        return { dni: c.dni, apellidos: c.apellidos, nombres: c.nombres, celular: c.celular || "", tel2: c.ref1Telefono || "", correo: c.correo ? String(c.correo).toUpperCase() : "", direccion: c.direccion || "" };
       });
     } else if (tipo.indexOf("prestamo") === 0) {
       cols = [
@@ -2579,16 +2812,17 @@
     document.body.appendChild(gate);
     $("panel-login-form").addEventListener("submit", function (e) {
       e.preventDefault();
+      var btn = $("panel-login-btn");
+      if (btn && btn.disabled) return;
       enableDesktopNotices();
       var err = $("panel-login-err");
-      var btn = $("panel-login-btn");
       var spin = $("panel-login-spin");
       var label = $("panel-login-label");
       var payload = {
         usuario: "Administrador",
         clave: $("panel-pass").value,
       };
-      btn.disabled = true;
+      if (btn) btn.disabled = true;
       spin.hidden = false;
       err.hidden = true;
       run("login", payload)
@@ -2726,44 +2960,82 @@
       tasaForm();
     });
     $("refresh-btn").addEventListener("click", function () {
-      reload().then(function () {
-        paint();
-        toast("Datos actualizados.");
-      }).catch(actErr);
+      var btn = $("refresh-btn");
+      if (btn && btn.disabled) return;
+      if (btn) {
+        btn.disabled = true;
+        btn.classList.add("is-spin");
+      }
+      reload()
+        .then(function () {
+          paint();
+          toast("Datos actualizados.");
+        })
+        .catch(actErr)
+        .then(function () {
+          if (btn) {
+            btn.disabled = false;
+            btn.classList.remove("is-spin");
+          }
+        });
     });
     $("api-retry").addEventListener("click", function () {
-      reload().then(paint);
+      var btn = $("api-retry");
+      if (btn && btn.disabled) return;
+      if (btn) btn.disabled = true;
+      reload()
+        .then(function () {
+          paint();
+          toast("Datos actualizados.");
+        })
+        .catch(actErr)
+        .then(function () {
+          if (btn) btn.disabled = false;
+        });
     });
     document.addEventListener("click", function (e) {
       var btn = e.target.closest("button[data-act], a[data-act]");
       if (!btn) return;
       if (btn.tagName === "BUTTON" && btn.type === "submit") return;
-        e.preventDefault();
+      e.preventDefault();
+      if (btn.disabled || btn.getAttribute("data-busy") === "1") return;
       onAct(btn.getAttribute("data-act"), btn);
     });
     document.addEventListener("submit", function (e) {
       var form = e.target;
       if (form.id === "tasa-form") {
         e.preventDefault();
+        if (form.getAttribute("data-busy") === "1") return;
         var tasa = Number(formVal(form).tasaDefault);
         if (!isFinite(tasa) || tasa < 0 || tasa > 100) {
           swalErr("Indique un interés entre 0 y 100.");
         return;
       }
+        form.setAttribute("data-busy", "1");
+        var tasaBtn = form.querySelector('[type="submit"]');
+        if (tasaBtn) tasaBtn.disabled = true;
         run("saveConfig", { tasaDefault: tasa })
           .then(function () {
             closeModal();
           paint();
             swalOk("Interés actualizado", "Los préstamos nuevos usarán " + tasa.toLocaleString("es-PE", { maximumFractionDigits: 2 }) + "%. Los desembolsos anteriores no cambian.");
           })
-          .catch(actErr);
+          .catch(actErr)
+          .then(function () {
+            form.removeAttribute("data-busy");
+            if (tasaBtn) tasaBtn.disabled = false;
+          });
         return;
       }
       if (form.id === "aporte-form") {
         e.preventDefault();
+        if (form.getAttribute("data-busy") === "1") return;
         var payload = formVal(form);
         payload.inversionistaId = form.getAttribute("data-inv");
         payload.tipo = form.getAttribute("data-tipo");
+        form.setAttribute("data-busy", "1");
+        var apBtn = form.querySelector('[type="submit"]');
+        if (apBtn) apBtn.disabled = true;
         run("registrarAporte", payload)
           .then(function () {
             var invId = payload.inversionistaId;
@@ -2772,7 +3044,11 @@
           paint();
             showInv(invId);
           })
-          .catch(actErr);
+          .catch(actErr)
+          .then(function () {
+            form.removeAttribute("data-busy");
+            if (apBtn) apBtn.disabled = false;
+          });
         return;
       }
       if (form.id === "ent-form" || form.id === "loan-form" || form.id === "pay-form") {
@@ -2781,6 +3057,21 @@
       }
     });
     document.addEventListener("input", function (e) {
+      var el = e.target;
+      if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA") && el.closest(".if-form")) {
+        var t = String(el.type || "").toLowerCase();
+        if (t !== "password" && t !== "number" && t !== "date" && t !== "checkbox" && t !== "hidden" && el.name !== "dni" && el.name !== "celular" && el.name !== "ref1Telefono") {
+          var next = t === "email" || el.name === "correo" ? String(el.value || "").toUpperCase() : String(el.value || "").toLocaleUpperCase("es-PE");
+          if (el.value !== next) {
+            var start = el.selectionStart;
+            var end = el.selectionEnd;
+            el.value = next;
+            try {
+              if (start != null) el.setSelectionRange(start, end);
+            } catch (err) {}
+          }
+        }
+      }
       if (e.target.closest("#loan-form")) refreshLoanPreview();
     });
     document.addEventListener("change", function (e) {

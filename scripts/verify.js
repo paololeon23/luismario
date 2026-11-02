@@ -89,9 +89,11 @@ assert.ok(!E.dispatch("changePassword", db, { claveActual: "luismario2026", clav
 var noMail = E.dispatch("saveCliente", db, { dni: "12345678", nombres: "Ana", apellidos: "Perez", celular: "987654321" }, user);
 assert.ok(!noMail.ok);
 assert.strictEqual(noMail.error, "correo_invalido");
-var cli = E.dispatch("saveCliente", db, { dni: "12345678", nombres: "Ana", apellidos: "Perez", celular: "987654321", correo: "ana@correo.pe" }, user);
+var cli = E.dispatch("saveCliente", db, { dni: "12345678", nombres: "Ana", apellidos: "Perez", celular: "987654321", correo: "ANA@correo.pe" }, user);
 assert.ok(cli.ok);
 assert.strictEqual(cli.data.correo, "ana@correo.pe");
+assert.strictEqual(cli.data.nombres, "ANA");
+assert.strictEqual(cli.data.apellidos, "PEREZ");
 db = cli.db;
 var dup = E.dispatch("saveCliente", db, { dni: "12345678", nombres: "Luis", apellidos: "Rojas", correo: "luis@correo.pe" }, user);
 assert.ok(!dup.ok);
@@ -249,6 +251,17 @@ var pay3 = E.dispatch("registrarPago", db, { prestamoId: pre.data.id, importe: 1
 assert.ok(pay3.ok, pay3.message);
 db = pay3.db;
 assert.ok(E.prestamoSaldo(db, pre.data.id) < 1100);
+
+var resto = E.prestamoSaldo(db, pre.data.id);
+var cierre = E.dispatch("registrarPago", db, { prestamoId: pre.data.id, importe: resto, fecha: "2026-11-20" }, user);
+assert.ok(cierre.ok, cierre.message);
+db = cierre.db;
+assert.strictEqual(E.find(db.prestamos, pre.data.id).estado, "cancelado");
+assert.ok((db.historialPrestamos || []).some(function (h) { return h.prestamoId === pre.data.id; }));
+var histCli = E.dispatch("clienteHistorial", db, { id: cli.data.id }, user);
+assert.ok(histCli.ok);
+assert.ok(histCli.data.historial && histCli.data.historial.length);
+assert.ok(/^\d{2}-\d{2}-\d{4} \d{2}:\d{2}:\d{2}$/.test(String(cierre.data.createdAt || "")));
 
 var liq = E.dispatch("generarLiquidacion", db, { inversionistaId: invCap.data.id, monto: 50 }, user);
 assert.ok(liq.ok, liq.message);
