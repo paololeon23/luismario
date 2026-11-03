@@ -156,19 +156,19 @@
     var engine = root.ImpulsaEngine;
     if (!pack || !engine) return Promise.resolve(localDb);
     localDb = engine.normalizeDb(pack);
-    return persistLocal(localDb).then(function () {
-      return localDb;
-    });
+    persistLocal(localDb).catch(function () {});
+    return Promise.resolve(localDb);
   }
   function callRemote(action, payload, user, tries) {
-    tries = tries == null ? 3 : tries;
+    var readFast = action === "db" || action === "dashboard" || action === "reporte" || action === "clienteHistorial" || action === "inversionistaEstado";
+    tries = tries == null ? (readFast ? 2 : 3) : tries;
     return request({
       method: "POST",
       url: apiUrl(),
       body: { action: action, payload: payload || {}, session: user || null },
       fresh: true,
       retry: false,
-      timeout: cfg().timeoutMs || 30000,
+      timeout: readFast ? Math.min(cfg().timeoutMs || 30000, 18000) : cfg().timeoutMs || 30000,
     })
       .then(function (data) {
         if (data && data.ok === false) {
@@ -183,7 +183,7 @@
       })
       .catch(function (err) {
         if (tries > 1 && isBusy(err)) {
-          return wait(700 * (4 - tries)).then(function () {
+          return wait(readFast ? 400 : 700 * (4 - tries)).then(function () {
             return callRemote(action, payload, user, tries - 1);
           });
         }
@@ -208,22 +208,13 @@
     if (usesRemote()) {
       work = locked(function () {
         return callRemote(action, payload, user).then(function (data) {
-          var nextUser = user;
-          if ((action === "login" || action === "setupAdmin") && data && data.data && data.data.id) {
-            nextUser = data.data;
-          }
           if (data && data.db) {
             return cacheDump(data.db).then(function () {
               return data;
             });
           }
           if (action === "db") {
-            return cacheDump(data && data.data).then(function () {
-              return data;
-            });
-          }
-          if (nextUser && nextUser.id) {
-            return sync(nextUser).then(function () {
+            return cacheDump(data && (data.db || data.data)).then(function () {
               return data;
             });
           }

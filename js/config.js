@@ -15,8 +15,8 @@
   root.ImpulsaConfig = {
     apiUrl: String(root.IMPULSA_API_URL || fromMeta || stored || fallback).trim(),
     pollMs: 0,
-    timeoutMs: 30000,
-    staleMs: 4000,
+    timeoutMs: 22000,
+    staleMs: 6000,
     retries: 1,
     moneda: "PEN",
     simbolo: "S/",

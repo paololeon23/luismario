@@ -347,7 +347,9 @@
     if (row.celular != null) row.celular = digits(row.celular);
     if (row.ref1Telefono != null) row.ref1Telefono = digits(row.ref1Telefono);
     ["nombres", "apellidos", "direccion", "parentesco", "ocupacion", "observaciones", "descripcion", "cliente"].forEach(function (k) {
-      if (row[k] != null && row[k] !== "") row[k] = asUpper(row[k]);
+      if (row[k] == null || row[k] === "") return;
+      var v = String(row[k]);
+      if (/[a-zà-ÿ]/.test(v)) row[k] = asUpper(v);
     });
     if (row.correo != null && row.correo !== "") row.correo = asEmail(row.correo);
   }
@@ -1780,7 +1782,8 @@ function runCrud_(action, payload, session) {
   if (result.ok && result.db) saveDb(prev, result.db);
   if (result.data && result.data.clave) delete result.data.clave;
   var entra = user || (result.ok && result.data && result.data.id && (action === "login" || action === "setupAdmin"));
-  if (result.ok && entra) {
+  var needDb = action === "login" || action === "setupAdmin" || action === "db";
+  if (result.ok && entra && (needDb || result.db)) {
     result.db = publicDb_(result.db || db);
   } else if (result.db) {
     delete result.db;
@@ -1815,8 +1818,9 @@ function handle_(action, payload, session) {
     if (cached && sessionOk_(session, cached)) return json_(dbPack_(cached));
   }
   var lock = LockService.getScriptLock();
+  var waitMs = action === "db" || action === "login" || action === "dashboard" ? 12000 : 20000;
   try {
-    lock.waitLock(25000);
+    lock.waitLock(waitMs);
   } catch (err) {
     if (action === "db") {
       var again = tryCacheDb_();
@@ -1891,9 +1895,8 @@ function getSpreadsheet() {
     ss = SpreadsheetApp.create("Impulsa Financiera");
     props.setProperty("SPREADSHEET_ID", ss.getId());
     ensureSheets(ss);
-  } else {
+  } else if (!props.getProperty("SPREADSHEET_ID")) {
     props.setProperty("SPREADSHEET_ID", ss.getId());
-    dropJunkSheets_(ss);
   }
   return ss;
 }
@@ -1928,22 +1931,19 @@ function applyTasa_(db) {
 
 function putCache_(db) {
   try {
-    var cache = CacheService.getScriptCache();
-    cache.remove("IF_DB");
     var slim = publicDb_(db);
     var raw = JSON.stringify(slim);
-    if (raw.length < 90000) cache.put("IF_DB2", raw, 300);
+    var cache = CacheService.getScriptCache();
+    if (raw.length < 90000) cache.put("IF_DB2", raw, 600);
     else cache.remove("IF_DB2");
   } catch (err) {}
 }
 
 function loadDb() {
   try {
-    CacheService.getScriptCache().remove("IF_DB");
     var hit = CacheService.getScriptCache().get("IF_DB2");
     if (hit) {
-      var cached = ImpulsaEngine.normalizeDb(JSON.parse(hit));
-      return applyTasa_(cached);
+      return applyTasa_(ImpulsaEngine.normalizeDb(JSON.parse(hit)));
     }
   } catch (err) {}
   var ss = getSpreadsheet();
@@ -2018,11 +2018,6 @@ function writeSheet_(ss, name, rows, headers) {
   sh.getRange(1, 1, data.length, keys.length).setValues(data);
   sh.setFrozenRows(1);
   sh.getRange(1, 1, 1, keys.length).setFontWeight("bold").setBackground("#092653").setFontColor("#FFFFFF");
-  keys.forEach(function (k, i) {
-    if (k === "id" || k === "dni" || /Id$/.test(k) || /At$/.test(k) || k === "codigo") {
-      sh.getRange(1, i + 1, data.length, 1).setNumberFormat("@");
-    }
-  });
 }
 
 function encodeCell_(val) {

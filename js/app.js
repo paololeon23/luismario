@@ -800,8 +800,8 @@
         .then(function (reg) {
           if (reg && reg.showNotification) return reg.showNotification(title, opts);
           throw new Error("no-sw");
-        })
-        .catch(function () {
+            })
+            .catch(function () {
           try {
             new Notification(title, opts);
           } catch (err) {}
@@ -1200,7 +1200,7 @@
             prox.map(function (c) {
               var p = E.find(db.prestamos, c.prestamoId) || {};
               var late = String(c.fechaVencimiento || "") < hoy;
-              return {
+    return {
                 fecha: fmtDate(c.fechaVencimiento),
                 cli: dashWho(clienteOf(p.clienteId)),
                 cuota: sol(E.cuotaSaldo(c)),
@@ -1225,7 +1225,7 @@
               { key: "estado", label: "Estado", html: true },
             ],
             ult.map(function (p) {
-              return {
+      return {
                 fecha: fmtDate(p.fechaDesembolso),
                 cli: dashWho(clienteOf(p.clienteId)),
                 monto: sol(p.capital),
@@ -1264,7 +1264,7 @@
               { key: "act", label: "", html: true },
             ],
             clientes.slice(0, 8).map(function (c) {
-              return {
+    return {
                 dni: c.dni,
                 who: person(c),
                 act: '<button type="button" class="tool-btn" data-act="cliente-hist" data-id="' + esc(c.id) + '">Historial</button>',
@@ -1295,7 +1295,7 @@
               { key: "act", label: "", html: true },
             ],
             prestamos.slice(0, 8).map(function (p) {
-              return {
+    return {
                 codigo: p.codigo,
                 cli: person(clienteOf(p.clienteId)),
                 saldo: sol(E.prestamoSaldo(db, p.id)),
@@ -1858,18 +1858,18 @@
           .map(function (c) {
             var p = E.find(db.prestamos, c.prestamoId) || {};
             var late = String(c.fechaVencimiento || "") < hoy;
-            return (
+        return (
               '<button type="button" class="notice-item ' +
               (late ? "is-late" : "is-soon") +
               '" data-act="pago-new" data-id="' +
               esc(p.id || "") +
-              '"><span class="avatar">' +
+          '"><span class="avatar">' +
               esc(initials(clienteOf(p.clienteId))) +
               "</span><div><strong>Cuota " +
               esc(c.nro) +
               " · " +
               esc(etiquetaCobro(c)) +
-              "</strong><small>" +
+          "</strong><small>" +
               esc(person(clienteOf(p.clienteId))) +
               "</small><small>" +
               esc(p.codigo || "") +
@@ -1922,7 +1922,7 @@
       ? sliceRows
           .map(function (m) {
             var nombre = nombreDesdeAuditoria(m);
-            return (
+    return (
               '<article class="move-row"><time>' +
               esc(fmtDate(m.fecha)) +
               "</time><p>" +
@@ -2149,7 +2149,7 @@
         cuotas.map(function (c) {
           var st = c.estado;
           if (E.cuotaSaldo(c) > 0.009 && c.fechaVencimiento < today()) st = "vencido";
-          return {
+      return {
             nro: c.nro,
             fecha: fmtDate(c.fechaVencimiento),
             monto: sol(c.monto),
@@ -2229,15 +2229,15 @@
     var cerrados = h.historial && h.historial.length
       ? h.historial
       : (h.prestamosTerminados || []).map(function (p) {
-          return {
+        return {
             codigo: p.codigo,
             cliente: nombreCli,
             capital: p.capital,
             totalPagado: p.totalDevolver,
             fechaCierre: p.updatedAt,
             nCuotas: p.nCuotas,
-          };
-        });
+      };
+    });
     openModal("Historial del cliente", nombreCli,
       '<div class="if-hist"><p class="if-hist-name"><strong>' +
         esc(nombreCli) +
@@ -2258,7 +2258,7 @@
             { key: "saldo", label: "Saldo" },
           ],
           vigentes.map(function (p) {
-            return {
+      return {
               cliente: nombreCli,
               codigo: p.codigo,
               capital: sol(p.capital),
@@ -2361,11 +2361,11 @@
         esc(sol(c.importe)) +
         "</b></div></div><p class=\"if-letras\">Son: " +
         esc(numeroEnLetras(c.importe)) +
-        "</p><p class=\"muted\">" +
+                "</p><p class=\"muted\">" +
         esc(fmtDate(c.fecha)) +
         " · " +
         esc(c.usuario || "") +
-        "</p>" +
+                "</p>" +
         modalCloseBar('<button type="button" class="tool-btn tool-btn-ghost" data-act="recibo-print">Imprimir / PDF</button>') +
         "</div>"
     );
@@ -2870,17 +2870,19 @@
           gate.remove();
           if (!booted) boot();
           else paint();
-          return welcomeAfterLogin();
+          root.setTimeout(function () {
+            welcomeAfterLogin();
+          }, 40);
         })
         .catch(function (e2) {
           var msg = (e2 && e2.message) || "Usuario o clave incorrectos.";
-        err.hidden = false;
+          err.hidden = false;
           err.textContent = msg;
           swalErr(msg);
-          btn.disabled = false;
-          spin.hidden = true;
-          label.textContent = "Iniciar sesión";
-      });
+          if (btn) btn.disabled = false;
+          if (spin) spin.hidden = true;
+          if (label) label.textContent = "Iniciar sesión";
+        });
     });
     root.setTimeout(function () {
       var p = $("panel-pass");
@@ -3021,7 +3023,7 @@
       if (btn) btn.disabled = true;
       reload()
         .then(function () {
-          paint();
+        paint();
           toast("Datos actualizados.");
         })
         .catch(actErr)
@@ -3033,7 +3035,7 @@
       var btn = e.target.closest("button[data-act], a[data-act]");
       if (!btn) return;
       if (btn.tagName === "BUTTON" && btn.type === "submit") return;
-      e.preventDefault();
+        e.preventDefault();
       if (btn.disabled || btn.getAttribute("data-busy") === "1") return;
       onAct(btn.getAttribute("data-act"), btn);
     });
@@ -3060,7 +3062,7 @@
           .then(function () {
             form.removeAttribute("data-busy");
             if (tasaBtn) tasaBtn.disabled = false;
-          });
+        });
         return;
       }
       if (form.id === "aporte-form") {
@@ -3146,16 +3148,34 @@
       }, pollMs);
     }
     if (root.navigator && "serviceWorker" in root.navigator && location.protocol !== "file:") {
-      root.navigator.serviceWorker.register("./sw.js").catch(function () {});
+      root.setTimeout(function () {
+        root.navigator.serviceWorker.register("./sw.js").catch(function () {});
+      }, 1200);
     }
   }
 
+  function softSync() {
+    if (!session || !root.ImpulsaApi.usesRemote()) return Promise.resolve(db);
+    return reload()
+      .then(function () {
+        paint();
+        return db;
+      })
+      .catch(function () {
+        return db;
+      });
+  }
   function start() {
     panelOpen();
-    reload()
-      .then(function () {
-        if (!session) showPanelLogin();
-    else boot();
+    root.ImpulsaApi.loadLocal()
+      .then(function (pack) {
+        db = pack || db;
+        if (!session) {
+          showPanelLogin();
+          return;
+        }
+        boot();
+        softSync();
       })
       .catch(function () {
         if (!session) showPanelLogin();

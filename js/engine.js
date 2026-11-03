@@ -334,7 +334,9 @@
     if (row.celular != null) row.celular = digits(row.celular);
     if (row.ref1Telefono != null) row.ref1Telefono = digits(row.ref1Telefono);
     ["nombres", "apellidos", "direccion", "parentesco", "ocupacion", "observaciones", "descripcion", "cliente"].forEach(function (k) {
-      if (row[k] != null && row[k] !== "") row[k] = asUpper(row[k]);
+      if (row[k] == null || row[k] === "") return;
+      var v = String(row[k]);
+      if (/[a-zà-ÿ]/.test(v)) row[k] = asUpper(v);
     });
     if (row.correo != null && row.correo !== "") row.correo = asEmail(row.correo);
   }
