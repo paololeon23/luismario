@@ -663,7 +663,7 @@
       createdAt: asStamp(prestamo.updatedAt) || nowIso(),
     });
     if (!silent) {
-      audit(db, { id: "USR-ADMIN", nombre: "Sistema" }, "cerrar", "prestamo", prestamo.id, "Préstamo " + (prestamo.codigo || "") + " terminado. Queda en historial del cliente.");
+      audit(db, { id: "USR-ADMIN", nombre: "Sistema" }, "cerrar", "prestamo", prestamo.id, fullName(cli) + " · Préstamo " + (prestamo.codigo || "") + " terminado");
     }
   }
   function quitarCierreHistorial(db, prestamoId) {

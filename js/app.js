@@ -1891,6 +1891,27 @@
     badgeEl.hidden = !n;
     badgeEl.textContent = n > 99 ? "99+" : String(n);
   }
+  function nombreDesdeAuditoria(m) {
+    if (!m) return "";
+    var det = String(m.detalle || "");
+    if (m.entidad === "clientes") {
+      var cli = E.find(db.clientes, m.entidadId);
+      return cli ? person(cli) : det;
+    }
+    if (m.entidad === "prestamos" || m.entidad === "prestamo") {
+      var pre = E.find(db.prestamos, m.entidadId);
+      if (pre) return person(clienteOf(pre.clienteId));
+    }
+    if (m.entidad === "cobranzas") {
+      var cob = E.find(db.cobranzas, m.entidadId);
+      if (cob) return person(clienteOf(cob.clienteId));
+    }
+    if (m.entidad === "avales") {
+      var av = E.find(db.avales, m.entidadId);
+      if (av) return person(clienteOf(av.clienteId));
+    }
+    return "";
+  }
   function paintMoves() {
     var list = (db.auditoria || []).slice();
     var pages = Math.max(1, Math.ceil(list.length / PAGE));
@@ -1900,15 +1921,17 @@
     $("moves-list").innerHTML = sliceRows.length
       ? sliceRows
           .map(function (m) {
-    return (
+            var nombre = nombreDesdeAuditoria(m);
+            return (
               '<article class="move-row"><time>' +
               esc(fmtDate(m.fecha)) +
               "</time><p>" +
+              (nombre ? "<strong>" + esc(nombre) + "</strong> · " : "") +
               esc((m.accion || "") + " · " + (m.entidad || "") + " · " + (m.detalle || "")) +
               "</p></article>"
-              );
-            })
-            .join("")
+            );
+          })
+          .join("")
       : '<p class="moves-empty">Las altas, pagos y anulaciones quedan registradas aquí.</p>';
     var pagerEl = $("moves-pager");
     if (list.length <= PAGE) {
@@ -2199,6 +2222,7 @@
     var res = E.dispatch("clienteHistorial", db, { id: id });
     if (!res.ok) return swalErr(res.message);
     var h = res.data;
+    var nombreCli = person(h.cliente);
     var vigentes = h.prestamosActivos || (h.prestamos || []).filter(function (p) {
       return p.estado !== "cancelado";
     });
@@ -2207,14 +2231,17 @@
       : (h.prestamosTerminados || []).map(function (p) {
           return {
             codigo: p.codigo,
+            cliente: nombreCli,
             capital: p.capital,
             totalPagado: p.totalDevolver,
             fechaCierre: p.updatedAt,
             nCuotas: p.nCuotas,
           };
         });
-    openModal("Historial del cliente", person(h.cliente),
-      '<div class="if-hist"><p class="muted">DNI ' +
+    openModal("Historial del cliente", nombreCli,
+      '<div class="if-hist"><p class="if-hist-name"><strong>' +
+        esc(nombreCli) +
+        "</strong></p><p class=\"muted\">DNI " +
         esc(h.cliente.dni) +
         " · " +
         esc(h.cliente.celular || "sin celular") +
@@ -2224,18 +2251,26 @@
         "<h3>Préstamos vigentes</h3>" +
         table(
           [
+            { key: "cliente", label: "Cliente" },
             { key: "codigo", label: "Código" },
             { key: "capital", label: "Capital" },
             { key: "estado", label: "Estado", html: true },
             { key: "saldo", label: "Saldo" },
           ],
           vigentes.map(function (p) {
-            return { codigo: p.codigo, capital: sol(p.capital), estado: badge(p.estado), saldo: sol(E.prestamoSaldo(db, p.id)) };
+            return {
+              cliente: nombreCli,
+              codigo: p.codigo,
+              capital: sol(p.capital),
+              estado: badge(p.estado),
+              saldo: sol(E.prestamoSaldo(db, p.id)),
+            };
           })
         ) +
         "<h3>Préstamos terminados</h3>" +
         table(
           [
+            { key: "cliente", label: "Cliente" },
             { key: "codigo", label: "Código" },
             { key: "capital", label: "Capital" },
             { key: "pagado", label: "Pagado" },
@@ -2243,6 +2278,7 @@
           ],
           cerrados.map(function (p) {
             return {
+              cliente: p.cliente || nombreCli,
               codigo: p.codigo,
               capital: sol(p.capital),
               pagado: sol(p.totalPagado != null ? p.totalPagado : p.totalDevolver),
@@ -2316,10 +2352,10 @@
       '<div class="if-recibo"><img src="JL.jpeg" alt="Impulsa Financiera" /><p><strong>' +
         esc(person(cli)) +
         "</strong></p>" +
-        (cli.correo ? "<p>" + esc(String(cli.correo).toUpperCase()) + "</p>" : "") +
+        (cli.correo ? "<p>" + esc(showMail(cli.correo)) + "</p>" : "") +
         "<p>Préstamo " +
         esc(p.codigo || "") +
-        "</p><div class=\"if-plan-kpis if-plan-kpis-2\"><div><span>Número de cuota</span><b>" +
+        '</p><div class="if-plan-kpis if-recibo-kpis"><div><span>Número de cuota</span><b>' +
         esc(nroCuota) +
         "</b></div><div><span>Monto que se pagó</span><b>" +
         esc(sol(c.importe)) +

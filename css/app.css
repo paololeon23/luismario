@@ -3222,8 +3222,21 @@ body.swal-on .modal { pointer-events: none; }
   gap: 14px;
   margin-bottom: 16px;
 }
-.if-plan-kpis-2 {
+.if-plan-kpis-2,
+.if-recibo-kpis {
   grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.if-recibo .if-recibo-kpis {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  max-width: 420px;
+  margin-left: auto;
+  margin-right: auto;
+}
+.if-hist-name {
+  margin: 0 0 4px;
+  font-size: 18px;
+  color: var(--navy);
+  letter-spacing: -0.02em;
 }
 .if-plan-kpis div {
   background: var(--qb-soft);
@@ -3335,6 +3348,7 @@ body.swal-on .modal { pointer-events: none; }
   .form-grid-3,
   .if-plan-kpis,
   .if-plan-kpis-2,
+  .if-recibo-kpis,
   .if-donut { grid-template-columns: 1fr; }
   .hero-logo { width: min(180px, 70%); margin: 16px auto 0; }
   .form-card { width: 100%; border-radius: 20px; }
@@ -3689,7 +3703,8 @@ body.swal-on .modal { pointer-events: none; }
   .if-hist,
   .if-recibo { padding: 12px 16px 8px; }
   .if-plan-kpis,
-  .if-plan-kpis-2 { grid-template-columns: 1fr; }
+  .if-plan-kpis-2,
+  .if-recibo-kpis { grid-template-columns: 1fr; }
   .form-card,
   .modal-card {
     width: 100%;
